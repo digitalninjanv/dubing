@@ -227,9 +227,22 @@ impl TextTranslator for GeminiTranslator {
         const CHUNK_SIZE: usize = 20;
         let mut raw_translations = Vec::new();
 
-        for chunk in transcript.segments.chunks(CHUNK_SIZE) {
-            let chunk_items = self.translate_chunk(chunk, target_lang, tone).await?;
-            raw_translations.extend(chunk_items);
+        let chunks: Vec<&[TranscriptSegment]> = transcript.segments.chunks(CHUNK_SIZE).collect();
+        if chunks.len() <= 1 {
+            if let Some(first_chunk) = chunks.first() {
+                let chunk_items = self.translate_chunk(first_chunk, target_lang, tone).await?;
+                raw_translations.extend(chunk_items);
+            }
+        } else {
+            // Translate chunks concurrently over multiplexed HTTP/2 connection
+            let chunk_futures: Vec<_> = chunks
+                .iter()
+                .map(|chunk| self.translate_chunk(chunk, target_lang, tone))
+                .collect();
+            let results = futures::future::try_join_all(chunk_futures).await?;
+            for chunk_items in results {
+                raw_translations.extend(chunk_items);
+            }
         }
 
         let mut translated_segments = Vec::new();

@@ -1,6 +1,6 @@
 [package]
 name = "audiodub"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 authors = ["AudioDub Contributors"]
 description = "AI-powered desktop audio translation and dubbing for Linux"
@@ -16,6 +16,7 @@ glib = "0.20"
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = { version = "0.7" }
 async-channel = "2.3"
+futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 
 # Serialization & JSON
@@ -66,3 +67,7 @@ path = "tests/integration/failure_cases_test.rs"
 [[test]]
 name = "real_workflow_test"
 path = "tests/integration/real_workflow_test.rs"
+
+[[test]]
+name = "performance_benchmark"
+path = "tests/integration/performance_benchmark.rs"

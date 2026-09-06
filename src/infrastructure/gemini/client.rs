@@ -16,6 +16,11 @@ impl GeminiClient {
         Self {
             http: Client::builder()
                 .timeout(Duration::from_secs(120))
+                .tcp_nodelay(true)
+                .tcp_keepalive(Duration::from_secs(60))
+                .pool_max_idle_per_host(25)
+                .pool_idle_timeout(Duration::from_secs(120))
+                .http2_adaptive_window(true)
                 .build()
                 .unwrap_or_default(),
             api_key: api_key.into(),

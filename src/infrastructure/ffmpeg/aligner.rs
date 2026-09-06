@@ -107,32 +107,75 @@ impl FfmpegAligner {
         Ok(())
     }
 
-    /// Aligns synthesized segments with source timeline
+    /// Single-pass audio filter: trims silence and applies time-stretching simultaneously
+    pub fn process_segment_single_pass(
+        input_path: &Path,
+        output_path: &Path,
+        tempo: Option<f64>,
+    ) -> Result<u64, DomainError> {
+        let filter = if let Some(t) = tempo {
+            let clamped = t.clamp(0.75, 1.50);
+            format!("silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB,atempo={:.3}", clamped)
+        } else {
+            "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB".to_string()
+        };
+
+        let output = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-i")
+            .arg(input_path)
+            .arg("-af")
+            .arg(&filter)
+            .arg(output_path)
+            .output()
+            .map_err(|e| DomainError::AlignmentError(format!("Failed to run ffmpeg: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(DomainError::AlignmentError(format!(
+                "ffmpeg filter failed: {}",
+                stderr
+            )));
+        }
+
+        if let Ok(meta) = FfprobeInspector::probe(output_path) {
+            if meta.duration_ms > 100 {
+                return Ok(meta.duration_ms);
+            }
+        }
+
+        // Fallback copy if output is empty or probe failed
+        let _ = std::fs::copy(input_path, output_path);
+        let meta = FfprobeInspector::probe(output_path)?;
+        Ok(meta.duration_ms)
+    }
+
+    /// Aligns synthesized segments with source timeline using parallel single-pass processing
     pub fn align(
         job_dir: &Path,
         source_timeline: &[TranscriptSegment],
         synthesized: &[SynthesizedSegment],
         target_total_duration_ms: Option<u64>,
     ) -> Result<AlignmentResult, DomainError> {
-        let mut aligned_files = Vec::new();
-        let mut quality_warnings = Vec::new();
-        let mut current_timeline_ms: u64 = 0;
-
         let sample_rate = synthesized
             .first()
             .and_then(|s| FfprobeInspector::probe(&s.path).ok())
             .map(|m| m.sample_rate)
             .unwrap_or(24000);
 
-        for (idx, synth_seg) in synthesized.iter().enumerate() {
-            // Trim leading and trailing silence from raw TTS output
-            let trimmed_path = job_dir.join(format!("trimmed_{:04}.wav", idx));
-            let active_path = match Self::trim_silence(&synth_seg.path, &trimmed_path) {
-                Ok(()) => trimmed_path,
-                Err(_) => synth_seg.path.clone(),
-            };
+        // 1. Prepare segment plans
+        struct SegmentPlan {
+            synth_path: std::path::PathBuf,
+            target_path: std::path::PathBuf,
+            target_slot_ms: u64,
+            raw_duration_ms: u64,
+            segment_id: String,
+            start_ms: u64,
+        }
 
-            // Find corresponding source segment
+        let mut plans = Vec::with_capacity(synthesized.len());
+        for (idx, synth_seg) in synthesized.iter().enumerate() {
+            let target_path = job_dir.join(format!("align_{:04}.wav", idx));
             let source_seg = source_timeline
                 .iter()
                 .find(|s| s.id == synth_seg.segment_id)
@@ -141,24 +184,92 @@ impl FfmpegAligner {
             let (start_ms, end_ms) = if let Some(src) = source_seg {
                 (src.start_ms, src.end_ms)
             } else {
-                (
-                    current_timeline_ms,
-                    current_timeline_ms + synth_seg.duration_ms,
-                )
+                (0, synth_seg.duration_ms)
             };
+            let target_slot_ms = end_ms.saturating_sub(start_ms);
 
-            // Check if there is an overlap with preceding speech
-            if start_ms < current_timeline_ms && (current_timeline_ms - start_ms) > 200 {
+            plans.push(SegmentPlan {
+                synth_path: synth_seg.path.clone(),
+                target_path,
+                target_slot_ms,
+                raw_duration_ms: synth_seg.duration_ms,
+                segment_id: synth_seg.segment_id.clone(),
+                start_ms,
+            });
+        }
+
+        // 2. Parallel processing of all segments with single-pass filter across threads
+        struct ProcessedSegment {
+            path: std::path::PathBuf,
+            duration_ms: u64,
+            warning: Option<String>,
+            start_ms: u64,
+            segment_id: String,
+        }
+
+        let processed: Vec<Result<ProcessedSegment, DomainError>> = std::thread::scope(|s| {
+            let mut handles = Vec::with_capacity(plans.len());
+            for plan in &plans {
+                handles.push(s.spawn(|| {
+                    let mut warning = None;
+                    let tempo = if plan.target_slot_ms > 0
+                        && plan.raw_duration_ms > (plan.target_slot_ms + 80)
+                    {
+                        let ratio = (plan.raw_duration_ms as f64) / (plan.target_slot_ms as f64);
+                        if ratio > 1.50 {
+                            let new_duration =
+                                (plan.raw_duration_ms as f64 / 1.50).round() as u64;
+                            warning = Some(format!(
+                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.50x (new duration: {}ms)",
+                                plan.segment_id, plan.raw_duration_ms, plan.target_slot_ms, ratio, new_duration
+                            ));
+                            Some(1.50)
+                        } else {
+                            Some(ratio)
+                        }
+                    } else {
+                        None
+                    };
+
+                    let dur_ms = Self::process_segment_single_pass(
+                        &plan.synth_path,
+                        &plan.target_path,
+                        tempo,
+                    )?;
+                    Ok(ProcessedSegment {
+                        path: plan.target_path.clone(),
+                        duration_ms: dur_ms,
+                        warning,
+                        start_ms: plan.start_ms,
+                        segment_id: plan.segment_id.clone(),
+                    })
+                }));
+            }
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        // 3. Assemble timeline sequentially (preserving correct chronology and silence gaps)
+        let mut aligned_files = Vec::new();
+        let mut quality_warnings = Vec::new();
+        let mut current_timeline_ms: u64 = 0;
+
+        for (idx, item_res) in processed.into_iter().enumerate() {
+            let item = item_res?;
+            if let Some(w) = item.warning {
+                quality_warnings.push(w);
+            }
+
+            // Check overlap with preceding speech
+            if item.start_ms < current_timeline_ms && (current_timeline_ms - item.start_ms) > 200 {
                 quality_warnings.push(format!(
                     "Segment {} overlap: target starts at {}ms but previous speech ended at {}ms",
-                    synth_seg.segment_id, start_ms, current_timeline_ms
+                    item.segment_id, item.start_ms, current_timeline_ms
                 ));
             }
 
-            // 1. If there is a silence gap between current position and segment start, pad silence
-            if start_ms > current_timeline_ms {
-                let gap_ms = start_ms - current_timeline_ms;
-                // Only pad if gap is noticeable (> 50ms)
+            // Pad silence gap between current position and segment start
+            if item.start_ms > current_timeline_ms {
+                let gap_ms = item.start_ms - current_timeline_ms;
                 if gap_ms >= 50 {
                     let silence_path = job_dir.join(format!("silence_{:04}.wav", idx));
                     Self::generate_silence(&silence_path, gap_ms, sample_rate)?;
@@ -167,42 +278,11 @@ impl FfmpegAligner {
                 }
             }
 
-            // 2. Check duration and determine if time-stretching is appropriate
-            let target_slot_ms = end_ms.saturating_sub(start_ms);
-            let actual_metadata = FfprobeInspector::probe(&active_path)?;
-            let actual_duration_ms = actual_metadata.duration_ms;
-
-            if target_slot_ms > 0 && actual_duration_ms > (target_slot_ms + 80) {
-                // Audio exceeds target slot by more than 80ms
-                let ratio = (actual_duration_ms as f64) / (target_slot_ms as f64);
-                if ratio <= 1.50 {
-                    // Fit precisely into target slot so that 100% of the speech completes within the slot
-                    let stretched_path = job_dir.join(format!("align_{:04}.wav", idx));
-                    Self::time_stretch(&active_path, &stretched_path, ratio)?;
-                    aligned_files.push(stretched_path);
-                    current_timeline_ms += target_slot_ms;
-                    continue;
-                } else {
-                    // Exceeds 1.50x: compress at 1.50x to preserve intelligibility without cutting words
-                    let stretched_path = job_dir.join(format!("align_{:04}.wav", idx));
-                    Self::time_stretch(&active_path, &stretched_path, 1.50)?;
-                    aligned_files.push(stretched_path);
-                    let new_duration = (actual_duration_ms as f64 / 1.50).round() as u64;
-                    quality_warnings.push(format!(
-                        "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.50x (new duration: {}ms)",
-                        synth_seg.segment_id, actual_duration_ms, target_slot_ms, ratio, new_duration
-                    ));
-                    current_timeline_ms += new_duration;
-                    continue;
-                }
-            }
-
-            // Otherwise use the active segment directly
-            aligned_files.push(active_path);
-            current_timeline_ms += actual_duration_ms;
+            aligned_files.push(item.path);
+            current_timeline_ms += item.duration_ms;
         }
 
-        // 3. Post-timeline alignment: if total target duration is provided and current timeline is shorter, pad ending silence
+        // 4. Post-timeline alignment: if total target duration is provided and current timeline is shorter, pad ending silence
         if let Some(total_ms) = target_total_duration_ms {
             if total_ms > current_timeline_ms {
                 let end_gap_ms = total_ms - current_timeline_ms;

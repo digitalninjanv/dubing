@@ -8,9 +8,10 @@ use crate::domain::{
     VoiceProfile,
 };
 use crate::infrastructure::filesystem::{AppPaths, CleanupManager};
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Default)]
@@ -97,6 +98,7 @@ impl PipelineOrchestrator {
     where
         F: Fn(&Job) + Send + Sync + 'static,
     {
+        let total_pipeline_timer = Instant::now();
         let job_dir = AppPaths::job_dir(job.id.as_str());
         std::fs::create_dir_all(&job_dir)
             .map_err(|e| DomainError::Internal(format!("Failed to create job dir: {}", e)))?;
@@ -121,6 +123,7 @@ impl PipelineOrchestrator {
             };
 
         // 1. Validation Stage
+        let t_valid_start = Instant::now();
         if job.stage == PipelineStage::Idle || job.stage == PipelineStage::Validating {
             update_stage(
                 &mut job,
@@ -134,6 +137,7 @@ impl PipelineOrchestrator {
                 .validate_for_processing(self.audio_config.max_file_size_bytes)
                 .map_err(DomainError::InvalidAudio)?;
         }
+        let t_valid = t_valid_start.elapsed();
 
         let check_cancellation = |job: &mut Job| -> Result<(), DomainError> {
             if cancel_token.is_cancelled() {
@@ -155,6 +159,7 @@ impl PipelineOrchestrator {
         }
 
         // 2. Uploading & Transcription Stage
+        let t_transcribe_start = Instant::now();
         let transcript = if job.stage == PipelineStage::Validating
             || job.stage == PipelineStage::Uploading
             || job.stage == PipelineStage::Transcribing
@@ -200,6 +205,7 @@ impl PipelineOrchestrator {
             serde_json::from_str(&content)
                 .map_err(|e| DomainError::Internal(format!("Failed to parse transcript: {}", e)))?
         };
+        let t_transcribe = t_transcribe_start.elapsed();
 
         if let Err(e) = check_cancellation(&mut job) {
             self.job_repo.save(&job).await?;
@@ -208,6 +214,7 @@ impl PipelineOrchestrator {
         }
 
         // 3. Translation Stage
+        let t_translate_start = Instant::now();
         let translated = if job.stage == PipelineStage::Transcribing
             || job.stage == PipelineStage::Translating
         {
@@ -239,6 +246,7 @@ impl PipelineOrchestrator {
                 DomainError::Internal(format!("Failed to parse translated doc: {}", e))
             })?
         };
+        let t_translate = t_translate_start.elapsed();
 
         if let Err(e) = check_cancellation(&mut job) {
             self.job_repo.save(&job).await?;
@@ -309,53 +317,84 @@ impl PipelineOrchestrator {
             speed: 1.0,
         };
 
-        let mut synthesized_segments: Vec<SynthesizedSegment> = Vec::new();
-        let semaphore = Arc::new(Semaphore::new(2)); // Controlled concurrency = 2 as per PRD Section 23
+        let t_synthesis_start = Instant::now();
+        let mut tasks = Vec::with_capacity(translated.segments.len());
 
         for (idx, segment) in translated.segments.iter().enumerate() {
-            if let Err(e) = check_cancellation(&mut job) {
-                self.job_repo.save(&job).await?;
-                on_progress(&job);
-                return Err(e);
-            }
-
-            let segment_output_file = job_dir.join(format!("seg_{:04}.wav", idx + 1));
-
-            // Resume capability: if segment already exists and is valid, reuse it!
-            if segment_output_file.exists() {
-                if let Ok(meta) = self.audio_engine.probe(&segment_output_file).await {
-                    if meta.duration_ms > 0 {
-                        synthesized_segments.push(SynthesizedSegment {
-                            segment_id: segment.segment_id.clone(),
-                            speaker_id: segment.speaker_id.clone(),
-                            path: segment_output_file,
-                            duration_ms: meta.duration_ms,
-                        });
-                        job.progress.completed_segments += 1;
-                        on_progress(&job);
-                        continue;
-                    }
-                }
-            }
-
+            let seg = segment.clone();
             let voice = segment
                 .speaker_id
                 .as_ref()
                 .and_then(|s| voice_map.get(s))
                 .unwrap_or(&default_voice)
                 .clone();
+            let segment_output_file = job_dir.join(format!("seg_{:04}.wav", idx + 1));
+            let synth = self.synthesizer.clone();
+            let engine = self.audio_engine.clone();
+            let cancel = cancel_token.clone();
 
-            let _permit = semaphore
-                .acquire()
-                .await
-                .map_err(|e| DomainError::Internal(format!("Semaphore error: {}", e)))?;
+            tasks.push(async move {
+                if cancel.is_cancelled() {
+                    return Err(DomainError::Cancelled);
+                }
 
-            let synth_result = self
-                .synthesizer
-                .synthesize_segment(segment, &voice, &segment_output_file)
-                .await?;
+                // Resume capability: if segment already exists and is valid, reuse it!
+                if segment_output_file.exists() {
+                    if let Ok(meta) = engine.probe(&segment_output_file).await {
+                        if meta.duration_ms > 0 {
+                            return Ok((
+                                idx,
+                                SynthesizedSegment {
+                                    segment_id: seg.segment_id,
+                                    speaker_id: seg.speaker_id,
+                                    path: segment_output_file,
+                                    duration_ms: meta.duration_ms,
+                                },
+                            ));
+                        }
+                    }
+                }
 
-            synthesized_segments.push(synth_result);
+                if cancel.is_cancelled() {
+                    return Err(DomainError::Cancelled);
+                }
+
+                let synth_result = synth
+                    .synthesize_segment(&seg, &voice, &segment_output_file)
+                    .await?;
+
+                Ok((idx, synth_result))
+            });
+        }
+
+        // Concurrency level: 4 parallel TTS streams
+        const TTS_CONCURRENCY: usize = 4;
+        let mut stream = stream::iter(tasks).buffer_unordered(TTS_CONCURRENCY);
+        let mut collected: Vec<(usize, SynthesizedSegment)> =
+            Vec::with_capacity(translated.segments.len());
+
+        while let Some(res) = stream.next().await {
+            let (idx, synth_result) = match res {
+                Ok(item) => item,
+                Err(e) => {
+                    if cancel_token.is_cancelled() {
+                        job.cancel();
+                        if auto_cleanup && !debug_mode {
+                            CleanupManager::cleanup_temp_segments(&job_dir_cancel);
+                        }
+                        self.job_repo.save(&job).await?;
+                        on_progress(&job);
+                        return Err(DomainError::Cancelled);
+                    } else {
+                        job.fail(true, e.to_string());
+                        self.job_repo.save(&job).await?;
+                        on_progress(&job);
+                        return Err(e);
+                    }
+                }
+            };
+
+            collected.push((idx, synth_result));
             job.progress.completed_segments += 1;
             job.progress.message = format!(
                 "Synthesized segment {} of {}",
@@ -365,6 +404,11 @@ impl PipelineOrchestrator {
             on_progress(&job);
         }
 
+        collected.sort_by_key(|(idx, _)| *idx);
+        let synthesized_segments: Vec<SynthesizedSegment> =
+            collected.into_iter().map(|(_, seg)| seg).collect();
+        let t_synthesis = t_synthesis_start.elapsed();
+
         if let Err(e) = check_cancellation(&mut job) {
             self.job_repo.save(&job).await?;
             on_progress(&job);
@@ -372,6 +416,7 @@ impl PipelineOrchestrator {
         }
 
         // 5. Alignment Stage
+        let t_align_start = Instant::now();
         update_stage(
             &mut job,
             PipelineStage::Aligning,
@@ -391,8 +436,10 @@ impl PipelineOrchestrator {
                 Some(source_duration_ms),
             )
             .await?;
+        let t_align = t_align_start.elapsed();
 
         // 6. Exporting Stage
+        let t_export_start = Instant::now();
         update_stage(
             &mut job,
             PipelineStage::Exporting,
@@ -423,6 +470,7 @@ impl PipelineOrchestrator {
                 Some(source_duration_ms),
             )
             .await?;
+        let t_export = t_export_start.elapsed();
 
         // Generate Subtitle artifacts (.srt, .vtt, bilingual .txt)
         let file_stem = job
@@ -517,6 +565,19 @@ impl PipelineOrchestrator {
         if self.auto_cleanup && !self.debug_mode {
             CleanupManager::cleanup_temp_segments(&job_dir);
         }
+
+        tracing::info!(
+            "Pipeline finished for Job {} in {:.2}s [Validation: {:.2}s, Transcription: {:.2}s, Translation: {:.2}s, Synthesis: {:.2}s ({} segs), Alignment: {:.2}s, Export: {:.2}s]",
+            job.id.as_str(),
+            total_pipeline_timer.elapsed().as_secs_f64(),
+            t_valid.as_secs_f64(),
+            t_transcribe.as_secs_f64(),
+            t_translate.as_secs_f64(),
+            t_synthesis.as_secs_f64(),
+            translated.segments.len(),
+            t_align.as_secs_f64(),
+            t_export.as_secs_f64()
+        );
 
         Ok(artifact)
     }
