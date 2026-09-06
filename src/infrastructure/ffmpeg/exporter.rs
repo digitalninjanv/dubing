@@ -14,6 +14,7 @@ impl FfmpegExporter {
         format: AudioFormat,
         bitrate_kbps: u32,
         quality_warnings: Vec<String>,
+        target_duration_ms: Option<u64>,
     ) -> Result<AudioArtifact, DomainError> {
         if segments.is_empty() {
             return Err(DomainError::ExportError(
@@ -47,6 +48,22 @@ impl FfmpegExporter {
             .arg("0")
             .arg("-i")
             .arg(&concat_list_path);
+
+        // Strict Master Duration Synchronization:
+        // If target_duration_ms is provided, enforce exact 1:1 duration matching via apad and -t
+        if let Some(target_ms) = target_duration_ms {
+            if target_ms > 0 {
+                let duration_secs = (target_ms as f64) / 1000.0;
+                let filter = if target_ms > 100 {
+                    let fade_start = (target_ms as f64 - 50.0) / 1000.0;
+                    format!("apad,afade=t=out:st={:.3}:d=0.050", fade_start)
+                } else {
+                    "apad".to_string()
+                };
+                cmd.arg("-af").arg(filter);
+                cmd.arg("-t").arg(format!("{:.3}", duration_secs));
+            }
+        }
 
         match format {
             AudioFormat::Mp3 => {

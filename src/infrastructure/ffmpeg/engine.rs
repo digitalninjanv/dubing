@@ -85,13 +85,19 @@ impl AudioEngine for FfmpegAudioEngine {
         job_dir: &Path,
         source_timeline: &[TranscriptSegment],
         synthesized: &[SynthesizedSegment],
+        target_total_duration_ms: Option<u64>,
     ) -> Result<AlignmentResult, DomainError> {
         let job_dir_owned = job_dir.to_path_buf();
         let source_timeline_owned = source_timeline.to_vec();
         let synthesized_owned = synthesized.to_vec();
 
         tokio::task::spawn_blocking(move || {
-            FfmpegAligner::align(&job_dir_owned, &source_timeline_owned, &synthesized_owned)
+            FfmpegAligner::align(
+                &job_dir_owned,
+                &source_timeline_owned,
+                &synthesized_owned,
+                target_total_duration_ms,
+            )
         })
         .await
         .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
@@ -104,6 +110,7 @@ impl AudioEngine for FfmpegAudioEngine {
         format: AudioFormat,
         bitrate_kbps: u32,
         quality_warnings: Vec<String>,
+        target_duration_ms: Option<u64>,
     ) -> Result<AudioArtifact, DomainError> {
         let segments_owned = aligned_segments.to_vec();
         let output_path_owned = output_path.to_path_buf();
@@ -115,6 +122,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 format,
                 bitrate_kbps,
                 quality_warnings,
+                target_duration_ms,
             )
         })
         .await

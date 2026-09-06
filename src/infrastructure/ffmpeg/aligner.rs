@@ -39,14 +39,51 @@ impl FfmpegAligner {
         Ok(())
     }
 
+    /// Trims leading and trailing silence from an audio file using the silenceremove filter
+    pub fn trim_silence(input_path: &Path, output_path: &Path) -> Result<(), DomainError> {
+        let output = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-i")
+            .arg(input_path)
+            .arg("-af")
+            .arg("silenceremove=start_periods=1:start_duration=0.03:start_threshold=-40dB:stop_periods=1:stop_duration=0.03:stop_threshold=-40dB")
+            .arg(output_path)
+            .output()
+            .map_err(|e| {
+                DomainError::AlignmentError(format!("Failed to run ffmpeg silenceremove: {}", e))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(DomainError::AlignmentError(format!(
+                "Failed to trim silence: {}",
+                stderr
+            )));
+        }
+
+        // Validate that trimmed output has a valid duration (> 100ms)
+        if let Ok(meta) = FfprobeInspector::probe(output_path) {
+            if meta.duration_ms > 100 {
+                return Ok(());
+            }
+        }
+
+        // If trimming produced empty or corrupt audio, copy input as fallback
+        std::fs::copy(input_path, output_path).map_err(|e| {
+            DomainError::AlignmentError(format!("Failed to fallback copy audio: {}", e))
+        })?;
+
+        Ok(())
+    }
+
     /// Time-stretches an audio file using the atempo filter (speedup or slowdown)
     pub fn time_stretch(
         input_path: &Path,
         output_path: &Path,
         tempo: f64,
     ) -> Result<(), DomainError> {
-        // Clamp tempo between 0.8 and 1.25 for natural sounding speech without distortion
-        let clamped_tempo = tempo.clamp(0.8, 1.25);
+        // Clamp tempo between 0.75 and 1.35 for natural sounding speech without distortion
+        let clamped_tempo = tempo.clamp(0.75, 1.35);
         let output = Command::new("ffmpeg")
             .arg("-y")
             .arg("-i")
@@ -75,6 +112,7 @@ impl FfmpegAligner {
         job_dir: &Path,
         source_timeline: &[TranscriptSegment],
         synthesized: &[SynthesizedSegment],
+        target_total_duration_ms: Option<u64>,
     ) -> Result<AlignmentResult, DomainError> {
         let mut aligned_files = Vec::new();
         let mut quality_warnings = Vec::new();
@@ -87,6 +125,13 @@ impl FfmpegAligner {
             .unwrap_or(24000);
 
         for (idx, synth_seg) in synthesized.iter().enumerate() {
+            // Trim leading and trailing silence from raw TTS output
+            let trimmed_path = job_dir.join(format!("trimmed_{:04}.wav", idx));
+            let active_path = match Self::trim_silence(&synth_seg.path, &trimmed_path) {
+                Ok(()) => trimmed_path,
+                Err(_) => synth_seg.path.clone(),
+            };
+
             // Find corresponding source segment
             let source_seg = source_timeline
                 .iter()
@@ -124,36 +169,48 @@ impl FfmpegAligner {
 
             // 2. Check duration and determine if time-stretching is appropriate
             let target_slot_ms = end_ms.saturating_sub(start_ms);
-            let actual_metadata = FfprobeInspector::probe(&synth_seg.path)?;
+            let actual_metadata = FfprobeInspector::probe(&active_path)?;
             let actual_duration_ms = actual_metadata.duration_ms;
 
-            if target_slot_ms > 0 && actual_duration_ms > (target_slot_ms + 200) {
-                // Audio exceeds target slot by more than 200ms
+            if target_slot_ms > 0 && actual_duration_ms > (target_slot_ms + 150) {
+                // Audio exceeds target slot by more than 150ms
                 let ratio = (actual_duration_ms as f64) / (target_slot_ms as f64);
-                if ratio <= 1.25 {
+                if ratio <= 1.35 {
                     // Mild stretchable ratio
                     let stretched_path = job_dir.join(format!("align_{:04}.wav", idx));
-                    Self::time_stretch(&synth_seg.path, &stretched_path, ratio)?;
+                    Self::time_stretch(&active_path, &stretched_path, ratio)?;
                     aligned_files.push(stretched_path);
                     current_timeline_ms += target_slot_ms;
                     continue;
                 } else {
-                    // Exceeds 1.25x: clamp to 1.25x and record warning
+                    // Exceeds 1.35x: clamp to 1.35x and record warning
                     let stretched_path = job_dir.join(format!("align_{:04}.wav", idx));
-                    Self::time_stretch(&synth_seg.path, &stretched_path, 1.25)?;
+                    Self::time_stretch(&active_path, &stretched_path, 1.35)?;
                     aligned_files.push(stretched_path);
                     quality_warnings.push(format!(
-                        "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.25x",
+                        "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.35x",
                         synth_seg.segment_id, actual_duration_ms, target_slot_ms, ratio
                     ));
-                    current_timeline_ms += (actual_duration_ms as f64 / 1.25).round() as u64;
+                    current_timeline_ms += (actual_duration_ms as f64 / 1.35).round() as u64;
                     continue;
                 }
             }
 
-            // Otherwise use the synthesized segment directly
-            aligned_files.push(synth_seg.path.clone());
+            // Otherwise use the active segment directly
+            aligned_files.push(active_path);
             current_timeline_ms += actual_duration_ms;
+        }
+
+        // 3. Post-timeline alignment: if total target duration is provided and current timeline is shorter, pad ending silence
+        if let Some(total_ms) = target_total_duration_ms {
+            if total_ms > current_timeline_ms {
+                let end_gap_ms = total_ms - current_timeline_ms;
+                if end_gap_ms >= 50 {
+                    let end_silence_path = job_dir.join("silence_end.wav");
+                    Self::generate_silence(&end_silence_path, end_gap_ms, sample_rate)?;
+                    aligned_files.push(end_silence_path);
+                }
+            }
         }
 
         Ok(AlignmentResult {

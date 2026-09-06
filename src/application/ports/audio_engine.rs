@@ -23,6 +23,7 @@ pub trait AudioEngine: Send + Sync {
         job_dir: &Path,
         source_timeline: &[TranscriptSegment],
         synthesized: &[SynthesizedSegment],
+        target_total_duration_ms: Option<u64>,
     ) -> Result<AlignmentResult, DomainError>;
 
     /// Export aligned segments to the final output file (MP3 or WAV)
@@ -33,6 +34,7 @@ pub trait AudioEngine: Send + Sync {
         format: AudioFormat,
         bitrate_kbps: u32,
         quality_warnings: Vec<String>,
+        target_duration_ms: Option<u64>,
     ) -> Result<AudioArtifact, DomainError>;
 
     /// Remux video with new audio track

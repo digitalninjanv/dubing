@@ -380,9 +380,16 @@ impl PipelineOrchestrator {
         self.job_repo.save(&job).await?;
         on_progress(&job);
 
+        let source_duration_ms = job.source_audio.metadata.duration_ms;
+
         let alignment_res = self
             .audio_engine
-            .align_segments(&job_dir, &transcript.segments, &synthesized_segments)
+            .align_segments(
+                &job_dir,
+                &transcript.segments,
+                &synthesized_segments,
+                Some(source_duration_ms),
+            )
             .await?;
 
         // 6. Exporting Stage
@@ -413,6 +420,7 @@ impl PipelineOrchestrator {
                 AudioFormat::Mp3,
                 self.audio_config.default_bitrate_kbps,
                 alignment_res.quality_warnings,
+                Some(source_duration_ms),
             )
             .await?;
 

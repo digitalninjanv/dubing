@@ -184,20 +184,22 @@ async fn test_audio_alignment_clamping_and_warning_on_long_speech() {
     }];
 
     let alignment_res = engine
-        .align_segments(dir.path(), &source_timeline, &synth_segments)
+        .align_segments(dir.path(), &source_timeline, &synth_segments, Some(1000))
         .await
         .expect("Alignment should succeed with quality warnings");
 
     assert_eq!(alignment_res.aligned_files.len(), 1);
     assert!(
         !alignment_res.quality_warnings.is_empty(),
-        "Expected quality warnings for audio exceeding 1.25x stretch limit"
+        "Expected quality warnings for audio exceeding stretch limit"
     );
 
     let warning_text = &alignment_res.quality_warnings[0];
     assert!(
-        warning_text.contains("1.25x") || warning_text.contains("clamped"),
-        "Warning should mention clamping or 1.25x limit: {}",
+        warning_text.contains("1.35x")
+            || warning_text.contains("1.25x")
+            || warning_text.contains("clamped"),
+        "Warning should mention clamping: {}",
         warning_text
     );
 }

@@ -76,21 +76,24 @@ impl GeminiTranslator {
                 json!({
                     "segment_id": s.id,
                     "speaker": s.speaker_id,
-                    "text": s.text
+                    "text": s.text,
+                    "duration_ms": s.duration_ms(),
                 })
             })
             .collect();
 
         let prompt = format!(
-            r#"You are a professional audio dubbing translator.
+            r#"You are a professional audio dubbing translator and script adapter.
 Translate the following spoken transcript from source language into target language: '{target_language}'.
 
 Style and Tone Guidance:
 {tone_instruction}
 
-Requirements:
-- Preserve original meaning and conversational spoken flow.
-- Make the phrasing concise and natural for speech dubbing.
+Timing & Dubbing Rules:
+- IMPORTANT: Each segment has a strict time budget ('duration_ms').
+- Your translation MUST match the duration and cadence of the original speech.
+- Ensure the translated text can be spoken naturally within the specified duration_ms. Avoid wordy, verbose, or unnecessarily long phrasing.
+- If the target language naturally uses more syllables, adapt the translation to be concise and punchy without losing key meaning.
 - Preserve names, numbers, dates, and technical terminology accurately.
 - Maintain the exact same segment_id for each item.
 - Do not add explanations or meta text.
