@@ -4,7 +4,40 @@ Dokumen ini menyediakan panduan operasional terperinci untuk pengguna dan pengem
 
 ---
 
-## 1. Persiapan & Konfigurasi API Key
+## 1. Instalasi Cepat 1 Baris (One-Line Installer)
+
+### Metode Universal (Tanpa Sudo / Rootless)
+Perintah ini akan secara otomatis mendeteksi arsitektur, mengunduh rilis terbaru dari GitHub Releases, memverifikasi SHA-256 checksum, memasang binary ke `~/.local/bin/audiodub`, serta mendaftarkan ikon dan launcher desktop ke sistem GNOME/KDE Anda:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash
+```
+
+### Opsi Versi Spesifik
+Jika Anda ingin menginstal versi tertentu:
+```bash
+curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --version v0.1.0
+```
+
+### Cara Uninstall Bersih
+Untuk menghapus binary, launcher `.desktop`, dan ikon secara otomatis dari sistem:
+```bash
+# Opsi A: Jalankan uninstaller yang sudah terpasang
+audiodub-uninstall
+
+# Opsi B: Menggunakan skrip installer
+curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --uninstall
+```
+
+### Metode Fedora 44 (Native DNF Package)
+Untuk sistem Fedora, Anda juga dapat menginstal paket RPM langsung dari GitHub Release:
+```bash
+sudo dnf install https://github.com/digitalninjanv/dubing/releases/latest/download/audiodub-0.1.0-1.fc44.x86_64.rpm
+```
+
+---
+
+## 2. Persiapan & Konfigurasi API Key
 
 AudioDub AI memanfaatkan API Google Gemini untuk pengenalan suara (*STT*), penerjemahan (*Translation*), dan sintesis vokal (*TTS*).
 
@@ -42,7 +75,7 @@ Terdapat 3 cara untuk menyediakan API key ke aplikasi:
 
 ---
 
-## 2. Penggunaan Antarmuka Desktop (GUI)
+## 3. Penggunaan Antarmuka Desktop (GUI)
 
 ### Antarmuka Utama (Translate View)
 1. **Dropzone:**
@@ -84,7 +117,7 @@ Setelah dubbing selesai:
 
 ---
 
-## 3. Penggunaan Antarmuka Terminal (CLI)
+## 4. Penggunaan Antarmuka Terminal (CLI)
 
 AudioDub AI dilengkapi antarmuka baris perintah (*CLI*) bawaan yang cepat dan ramah skrip.
 
@@ -118,7 +151,7 @@ audiodub translate meeting.ogg --source de --target id
 
 ---
 
-## 4. Mekanisme Multi-Speaker & Profil Suara
+## 5. Mekanisme Multi-Speaker & Profil Suara
 
 AudioDub AI memanfaatkan deteksi pembicara (*speaker diarization*) dari model `gemini-3.5-transcribe`:
 - Segmen percakapan secara otomatis dilabeli dengan ID pembicara (mis. `Speaker 1`, `Speaker 2`).
@@ -128,7 +161,7 @@ AudioDub AI memanfaatkan deteksi pembicara (*speaker diarization*) dari model `g
 
 ---
 
-## 5. Pemecahan Masalah (Troubleshooting FAQ)
+## 6. Pemecahan Masalah (Troubleshooting FAQ)
 
 ### Masalah 1: `ffmpeg: command not found`
 - **Penyebab:** Binary `ffmpeg` atau `ffprobe` belum terpasang di sistem operasi.

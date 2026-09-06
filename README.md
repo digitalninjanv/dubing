@@ -3,20 +3,50 @@
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 [![GTK4](https://img.shields.io/badge/GUI-GTK4%20%2B%20Libadwaita-blue.svg)](https://gtk.org)
 [![Target](https://img.shields.io/badge/Platform-Fedora%2044%20%7C%20Linux-green.svg)](https://fedoraproject.org)
+[![Release](https://img.shields.io/github/v/release/digitalninjanv/dubing?include_prereleases&label=Release&color=blue)](https://github.com/digitalninjanv/dubing/releases)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 **AudioDub AI** adalah aplikasi desktop Linux native modern (GTK4 + Libadwaita + Rust) yang dirancang untuk menerjemahkan dan melakukan *voice dubbing* pada rekaman audio secara otomatis. Aplikasi ini mempertahankan keselarasan waktu percakapan (*timestamp-aware alignment*), mengenali pembicara berbeda (*speaker diarization*), dan merakit hasil secara deterministik di komputer lokal pengguna menggunakan FFmpeg.
 
 ---
 
+## 🚀 Instalasi Cepat 1 Baris (Quick Install)
+
+### Opsi 1: Universal Linux Installer (Rekomendasi)
+Instalasi instan tanpa `sudo` (rootless), otomatis memverifikasi SHA-256 checksum, memasang launcher `.desktop`, dan ikon aplikasi ke GNOME/KDE App Menu:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash
+```
+
+> **Untuk menginstal versi spesifik:**
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --version v0.1.0
+> ```
+
+> **Untuk uninstall bersih:**
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --uninstall
+> ```
+
+### Opsi 2: Native Fedora 44 RPM (via DNF)
+Pengguna Fedora dapat menginstal langsung paket RPM dari GitHub Release:
+
+```bash
+sudo dnf install https://github.com/digitalninjanv/dubing/releases/latest/download/audiodub-0.1.0-1.fc44.x86_64.rpm
+```
+
+---
+
 ## Daftar Isi
 
+- [Instalasi Cepat 1 Baris](#-instalasi-cepat-1-baris-quick-install)
 - [Fitur Utama](#fitur-utama)
 - [Arsitektur Hexagonal](#arsitektur-hexagonal)
 - [Pipeline Model Gemini](#pipeline-model-gemini)
 - [Audio Processing & Alignment](#audio-processing--alignment)
 - [Persyaratan Sistem & Dependensi](#persyaratan-sistem--dependensi)
-- [Instalasi & Kompilasi](#instalasi--kompilasi)
+- [Instalasi Manual & Kompilasi](#instalasi-manual--kompilasi)
   - [Membangun Binary Standar](#membangun-binary-standar)
   - [Membangun RPM Fedora 44](#membangun-rpm-fedora-44)
 - [Panduan Penggunaan](#panduan-penggunaan)
@@ -130,14 +160,14 @@ sudo apt update && sudo apt install -y cargo rustc ffmpeg libgtk-4-dev libadwait
 
 ---
 
-## Instalasi & Kompilasi
+## Instalasi Manual & Kompilasi
 
 ### Membangun Binary Standar
 
 ```bash
 # Clone repository
-git clone https://github.com/digitalninjanv/audiodub.git
-cd audiodub
+git clone https://github.com/digitalninjanv/dubing.git
+cd dubing
 
 # Kompilasi rilis berkinerja tinggi
 cargo build --release --all-features

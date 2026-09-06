@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release (Linux x86_64)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            ffmpeg \
+            libsecret-1-dev
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run verification test suite
+        run: cargo test --all-targets --all-features
+
+      - name: Build release binary
+        run: |
+          cargo build --release --all-features
+          strip target/release/audiodub
+
+      - name: Package release assets
+        id: package
+        run: |
+          TAG="${GITHUB_REF_NAME:-v0.1.0}"
+          ARCHIVE_NAME="audiodub-${TAG}-linux-x86_64"
+          
+          mkdir -p "${ARCHIVE_NAME}/bin"
+          mkdir -p "${ARCHIVE_NAME}/share/applications"
+          mkdir -p "${ARCHIVE_NAME}/share/icons/hicolor/scalable/apps"
+          mkdir -p "${ARCHIVE_NAME}/share/metainfo"
+
+          cp target/release/audiodub "${ARCHIVE_NAME}/bin/"
+          cp data/io.github.digitalninjanv.AudioDub.desktop "${ARCHIVE_NAME}/share/applications/"
+          cp data/icons/hicolor/scalable/apps/io.github.digitalninjanv.AudioDub.svg "${ARCHIVE_NAME}/share/icons/hicolor/scalable/apps/"
+          cp data/io.github.digitalninjanv.AudioDub.metainfo.xml "${ARCHIVE_NAME}/share/metainfo/"
+          cp LICENSE README.md "${ARCHIVE_NAME}/"
+
+          tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}"
+          sha256sum "${ARCHIVE_NAME}.tar.gz" > checksums.sha256
+
+          echo "archive_name=${ARCHIVE_NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.package.outputs.archive_name }}
+            checksums.sha256
+            install.sh
+          generate_release_notes: true
+          draft: false
+          prerelease: false
