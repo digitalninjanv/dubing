@@ -34,4 +34,12 @@ pub trait AudioEngine: Send + Sync {
         bitrate_kbps: u32,
         quality_warnings: Vec<String>,
     ) -> Result<AudioArtifact, DomainError>;
+
+    /// Remux video with new audio track
+    async fn remux_video(
+        &self,
+        video_input: &Path,
+        audio_input: &Path,
+        output_video: &Path,
+    ) -> Result<PathBuf, DomainError>;
 }

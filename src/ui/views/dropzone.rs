@@ -1,4 +1,4 @@
-use crate::domain::{LanguageId, LanguageRegistry};
+use crate::domain::{LanguageId, LanguageRegistry, SpeakerVoiceConfig, TranslationTone};
 use crate::ui::components::LanguagePickerHelper;
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
@@ -15,6 +15,9 @@ pub struct DropzoneView {
     translate_btn: gtk4::Button,
     source_combo: libadwaita::ComboRow,
     target_combo: libadwaita::ComboRow,
+    tone_combo: libadwaita::ComboRow,
+    speaker1_combo: libadwaita::ComboRow,
+    speaker2_combo: libadwaita::ComboRow,
     source_ids: Vec<LanguageId>,
     target_ids: Vec<LanguageId>,
     selected_path: Rc<RefCell<Option<PathBuf>>>,
@@ -113,10 +116,54 @@ impl DropzoneView {
 
         pref_group.add(&source_combo);
         pref_group.add(&target_combo);
+
+        // Translation Tone Selector
+        let tone_items = [
+            "Neutral (Standard, natural speech)",
+            "Casual (Conversational & relaxed)",
+            "Formal (Professional & polite)",
+            "Creative (Expressive & dramatic)",
+        ];
+        let tone_model = gtk4::StringList::new(&tone_items);
+        let tone_combo = libadwaita::ComboRow::new();
+        tone_combo.set_title("Translation Tone");
+        tone_combo.set_subtitle("Adjust style, formality, and phrasing");
+        tone_combo.set_model(Some(&tone_model));
+        tone_combo.set_selected(0);
+        pref_group.add(&tone_combo);
+
+        // Voice Profile Expander
+        let voice_options = [
+            "Auto (Recommended)",
+            "Kore (Firm & professional)",
+            "Puck (Upbeat & clear)",
+            "Fenrir (Excited & resonant)",
+            "Aoede (Breezy & soft)",
+        ];
+        let voice_expander = libadwaita::ExpanderRow::new();
+        voice_expander.set_title("Speaker Voices (Optional)");
+        voice_expander.set_subtitle("Assign specific voices to speakers");
+
+        let s1_model = gtk4::StringList::new(&voice_options);
+        let speaker1_combo = libadwaita::ComboRow::new();
+        speaker1_combo.set_title("Speaker 1 Voice");
+        speaker1_combo.set_model(Some(&s1_model));
+        speaker1_combo.set_selected(0);
+
+        let s2_model = gtk4::StringList::new(&voice_options);
+        let speaker2_combo = libadwaita::ComboRow::new();
+        speaker2_combo.set_title("Speaker 2 Voice");
+        speaker2_combo.set_model(Some(&s2_model));
+        speaker2_combo.set_selected(0);
+
+        voice_expander.add_row(&speaker1_combo);
+        voice_expander.add_row(&speaker2_combo);
+        pref_group.add(&voice_expander);
+
         container.append(&pref_group);
 
         // Translate & Dub Action Button
-        let translate_btn = gtk4::Button::with_label("Translate & Dub Audio");
+        let translate_btn = gtk4::Button::with_label("Translate & Dub Media");
         translate_btn.add_css_class("suggested-action");
         translate_btn.add_css_class("pill");
         translate_btn.set_halign(gtk4::Align::Center);
@@ -134,6 +181,9 @@ impl DropzoneView {
             translate_btn,
             source_combo,
             target_combo,
+            tone_combo,
+            speaker1_combo,
+            speaker2_combo,
             source_ids,
             target_ids,
             selected_path,
@@ -175,6 +225,36 @@ impl DropzoneView {
             .get(idx)
             .cloned()
             .unwrap_or_else(|| LanguageId::new("en"))
+    }
+
+    pub fn selected_tone(&self) -> TranslationTone {
+        match self.tone_combo.selected() {
+            1 => TranslationTone::Casual,
+            2 => TranslationTone::Formal,
+            3 => TranslationTone::Creative,
+            _ => TranslationTone::Neutral,
+        }
+    }
+
+    pub fn selected_voice_config(&self) -> Option<SpeakerVoiceConfig> {
+        let extract_voice = |idx: u32| -> Option<String> {
+            match idx {
+                1 => Some("Kore".to_string()),
+                2 => Some("Puck".to_string()),
+                3 => Some("Fenrir".to_string()),
+                4 => Some("Aoede".to_string()),
+                _ => None,
+            }
+        };
+
+        let s1 = extract_voice(self.speaker1_combo.selected());
+        let s2 = extract_voice(self.speaker2_combo.selected());
+
+        if s1.is_some() || s2.is_some() {
+            Some(SpeakerVoiceConfig::new(s1, s2))
+        } else {
+            None
+        }
     }
 
     pub fn connect_choose_file<F>(&self, callback: F)

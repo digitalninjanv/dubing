@@ -60,9 +60,17 @@ sudo dnf install https://github.com/digitalninjanv/dubing/releases/latest/downlo
 
 ## Fitur Utama
 
-- 🎙️ **Multi-Format Ingestion:** Mendukung MP3, WAV, M4A, AAC, OGG, FLAC, WebM, dan Opus melalui drag-and-drop atau file dialog.
+- 🎙️ **Audio & Video Ingestion:** Mendukung format audio (MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus) serta format video populer (**MP4, MKV, MOV, WebM**) dengan *zero-transcoding fast remuxing*.
+- 🎬 **Video Dubbing & Fast Remuxing:** Menggabungkan audio dubbing baru langsung ke stream video asli secara instan menggunakan FFmpeg stream copy (`-c:v copy`), menghasilkan video ter-dubbing sempurna tanpa penurunan kualitas visual.
+- 📄 **Automatic Subtitle Export:** Menghasilkan file subtitle standar industri (**`.srt`**, **`.vtt`**) dan transkrip bilingual paralel (**`.txt`**) secara otomatis dan sinkron dengan timeline ucapan.
+- 🎭 **Translation Tone & Style:** Pilihan gaya terjemahan fleksibel:
+  - `Neutral`: Terjemahan baku dan natural untuk audiens umum.
+  - `Casual`: Gaya santai dan percakapan sehari-hari cocok untuk podcast dan vlog.
+  - `Formal`: Gaya sopan, profesional, dan hormat untuk kuliah atau presentasi bisnis.
+  - `Creative`: Kosakata ekspresif dan dinamis menjaga emosi dan irama dialog.
+- 🗣️ **Manual Voice Customization per Speaker:** Sesuaikan profil suara untuk Speaker 1 & Speaker 2 secara independen (Kore, Puck, Fenrir, Aoede) atau biarkan *Auto*.
+- 📦 **Batch Processing Mode:** Mode batch CLI untuk memproses banyak file media sekaligus secara teratur dengan pelaporan status per berkas.
 - 🌐 **Dynamic Language Registry (85+ Bahasa):** Deteksi bahasa sumber secara otomatis (`auto`) serta fleksibilitas penerjemahan ke puluhan bahasa target tanpa *hardcoded pairs*.
-- 👥 **Multi-Speaker Awareness:** Mempertahankan perbedaan suara untuk dialog 2 pembicara dengan pemetaan profil suara otomatis (Aoede, Kore, Fenrir, Puck).
 - ⏱️ **Natural Alignment & Quality Gate:**
   - Penyisipan celah keheningan (*silence padding*) otomatis untuk jeda antar percakapan.
   - Kompresi durasi wajar (*time-stretching*) via filter `atempo` (maksimal 1.25×) guna mencegah distorsi nada (*chipmunk effect*).
@@ -209,11 +217,16 @@ audiodub
 1. **Pengaturan API Key:** Klik tombol ikon *Preferences* (ikon gir) di sudut kanan atas header bar, masukkan Gemini API Key dari [Google AI Studio](https://aistudio.google.com/), lalu simpan.
 2. **Pilih File Audio:** Seret (*drag & drop*) file audio ke area dropzone, atau klik tombol **Choose a File…**.
 3. **Pilih Bahasa:**
-   - **Source Language:** Biarkan `Auto Detect` atau pilih bahasa spesifik audio sumber.
+   - **Source Language:** Biarkan `Auto Detect` atau pilih bahasa spesifik audio/video sumber.
    - **Target Language:** Pilih bahasa tujuan dubbing (misalnya English, Indonesian, Japanese, German, dll.).
-4. **Mulai Proses:** Klik tombol **Translate & Dub Audio**.
+   - **Translation Tone:** Pilih gaya bahasa (`Neutral`, `Casual`, `Formal`, atau `Creative`).
+   - **Speaker Voices (Opsional):** Pilih suara khusus untuk Pembicara 1 & 2 (Kore, Puck, Fenrir, Aoede).
+4. **Mulai Proses:** Klik tombol **Translate & Dub Media**.
 5. **Monitor Kemajuan:** Progress bar interaktif akan menampilkan tahapan aktif (`Validating` → `Uploading` → `Transcribing` → `Translating` → `Synthesizing (X of Y)` → `Aligning` → `Exporting`).
-6. **Hasil & Pemutaran:** Setelah selesai, jendela hasil menyajikan durasi dan ukuran file, tombol **Play Audio**, tombol **Open Containing Folder**, serta peringatan kualitas bila ada penyesuaian tempo audio.
+6. **Hasil & Pemutaran:** Setelah selesai, jendela hasil menyajikan:
+   - Tombol **▶ Play Dubbed Audio** & **🎬 Play Dubbed Video** (bila sumber berupa video).
+   - Tombol **📄 Open Subtitles (.srt)** & **📝 Bilingual Script (.txt)**.
+   - Tombol **Open Containing Folder** serta peringatan kualitas bila ada penyesuaian tempo audio.
 7. **Riwayat:** Klik ikon riwayat di HeaderBar untuk melihat daftar riwayat pekerjaan dubbing sebelumnya.
 
 ### 2. Penggunaan CLI (Companion)
@@ -224,11 +237,14 @@ AudioDub AI menyediakan companion CLI lengkap untuk automasi terminal dan skrip:
 # Set Gemini API Key
 export GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
 
-# Menerjemahkan audio podcast bahasa Indonesia ke bahasa Inggris
-audiodub translate podcast_id.mp3 --source id --target en --output podcast_en.mp3
+# 1. Menerjemahkan audio podcast ID -> EN dengan tone casual
+audiodub translate podcast.mp3 --source id --target en --tone casual --output podcast_en.mp3
 
-# Menerjemahkan dengan deteksi bahasa otomatis ke bahasa Jepang
-audiodub translate interview.wav --target ja --output interview_ja.mp3
+# 2. Dubbing video MP4 ID -> JA dengan remuxing video otomatis dan custom voice
+audiodub translate video.mp4 --target ja --tone formal --voice-1 Kore
+
+# 3. Batch processing banyak berkas media sekaligus
+audiodub batch eps1.mp4 eps2.mkv clip.wav --target en --tone casual
 ```
 
 ---

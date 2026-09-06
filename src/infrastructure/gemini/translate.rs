@@ -2,6 +2,7 @@ use super::client::GeminiClient;
 use crate::application::ports::TextTranslator;
 use crate::domain::{
     DomainError, LanguageId, Transcript, TranscriptSegment, TranslatedDocument, TranslationSegment,
+    TranslationTone,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,7 @@ impl GeminiTranslator {
         &self,
         segments: &[TranscriptSegment],
         target_lang: &LanguageId,
+        tone: TranslationTone,
     ) -> Result<Vec<RawTranslatedItem>, DomainError> {
         if segments.is_empty() {
             return Ok(Vec::new());
@@ -83,8 +85,11 @@ impl GeminiTranslator {
             r#"You are a professional audio dubbing translator.
 Translate the following spoken transcript from source language into target language: '{target_language}'.
 
+Style and Tone Guidance:
+{tone_instruction}
+
 Requirements:
-- Preserve original meaning and conversational spoken tone.
+- Preserve original meaning and conversational spoken flow.
 - Make the phrasing concise and natural for speech dubbing.
 - Preserve names, numbers, dates, and technical terminology accurately.
 - Maintain the exact same segment_id for each item.
@@ -96,6 +101,7 @@ Transcript segments:
 {segments_data}
 "#,
             target_language = target_lang.as_str(),
+            tone_instruction = tone.prompt_directive(),
             segments_data = serde_json::to_string_pretty(&segments_json).unwrap_or_default()
         );
 
@@ -193,6 +199,7 @@ impl TextTranslator for GeminiTranslator {
         &self,
         transcript: &Transcript,
         target_lang: &LanguageId,
+        tone: TranslationTone,
     ) -> Result<TranslatedDocument, DomainError> {
         if transcript.segments.is_empty() {
             return Err(DomainError::PermanentApiError(
@@ -205,7 +212,7 @@ impl TextTranslator for GeminiTranslator {
         let mut raw_translations = Vec::new();
 
         for chunk in transcript.segments.chunks(CHUNK_SIZE) {
-            let chunk_items = self.translate_chunk(chunk, target_lang).await?;
+            let chunk_items = self.translate_chunk(chunk, target_lang, tone).await?;
             raw_translations.extend(chunk_items);
         }
 

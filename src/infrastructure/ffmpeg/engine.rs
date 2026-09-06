@@ -120,4 +120,21 @@ impl AudioEngine for FfmpegAudioEngine {
         .await
         .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
     }
+
+    async fn remux_video(
+        &self,
+        video_input: &Path,
+        audio_input: &Path,
+        output_video: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        let video_in = video_input.to_path_buf();
+        let audio_in = audio_input.to_path_buf();
+        let video_out = output_video.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            FfmpegExporter::remux_video(&video_in, &audio_in, &video_out)
+        })
+        .await
+        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+    }
 }

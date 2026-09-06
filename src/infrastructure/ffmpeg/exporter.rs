@@ -102,6 +102,56 @@ impl FfmpegExporter {
             duration_ms: metadata.duration_ms,
             size_bytes: file_size,
             quality_warnings,
+            subtitle_srt_path: None,
+            subtitle_vtt_path: None,
+            transcript_txt_path: None,
+            video_path: None,
         })
+    }
+
+    /// Remux original video stream with new dubbed audio track
+    pub fn remux_video(
+        video_input: &Path,
+        audio_input: &Path,
+        output_video: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args(["-y", "-i"])
+            .arg(video_input)
+            .arg("-i")
+            .arg(audio_input)
+            .args([
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-shortest",
+            ])
+            .arg(output_video);
+
+        let output = cmd.output().map_err(|e| {
+            DomainError::ExportError(format!("Failed to execute ffmpeg remux: {}", e))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(DomainError::ExportError(format!(
+                "FFmpeg remux failed with exit code {:?}: {}",
+                output.status.code(),
+                stderr
+            )));
+        }
+
+        if !output_video.exists() {
+            return Err(DomainError::ExportError(
+                "Remuxed video file was not created".to_string(),
+            ));
+        }
+
+        Ok(output_video.to_path_buf())
     }
 }

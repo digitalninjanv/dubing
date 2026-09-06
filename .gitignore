@@ -3,3 +3,5 @@
 credentials
 *.credentials
 .env
+*.tar.gz
+checksums.sha256

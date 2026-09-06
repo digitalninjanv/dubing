@@ -1,6 +1,6 @@
 use super::views::{DropzoneView, HistoryView, ProgressView, ResultView, SettingsDialog};
 use crate::application::ports::{AudioEngine, JobRepository, SecretStore};
-use crate::application::PipelineOrchestrator;
+use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
 use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
 use crate::infrastructure::gemini::{
@@ -89,13 +89,20 @@ impl MainWindow {
                 dialog.set_title("Select Audio File");
 
                 let filter = gtk4::FileFilter::new();
-                filter.set_name(Some("Audio Files (*.mp3, *.wav, *.m4a, *.flac, *.ogg)"));
+                filter.set_name(Some(
+                    "Audio & Video Files (*.mp3, *.wav, *.m4a, *.mp4, *.mkv, *.mov, *.webm)",
+                ));
                 filter.add_mime_type("audio/*");
+                filter.add_mime_type("video/*");
                 filter.add_pattern("*.mp3");
                 filter.add_pattern("*.wav");
                 filter.add_pattern("*.m4a");
                 filter.add_pattern("*.flac");
                 filter.add_pattern("*.ogg");
+                filter.add_pattern("*.mp4");
+                filter.add_pattern("*.mkv");
+                filter.add_pattern("*.mov");
+                filter.add_pattern("*.webm");
 
                 let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
                 filters.append(&filter);
@@ -254,6 +261,8 @@ impl MainWindow {
 
             let src_lang = dropzone_exec.selected_source_language();
             let tgt_lang = dropzone_exec.selected_target_language();
+            let tone = dropzone_exec.selected_tone();
+            let voice_config = dropzone_exec.selected_voice_config();
 
             if let Err(err_msg) = registry_exec.validate_pair(&src_lang, &tgt_lang) {
                 let toast = libadwaita::Toast::new(&err_msg);
@@ -271,6 +280,12 @@ impl MainWindow {
             let audio_engine_bg = audio_engine_exec.clone();
             let job_repo_bg = job_repo_exec.clone();
             let settings_bg = settings_exec.clone();
+
+            let pipeline_options = PipelineOptions {
+                tone,
+                voice_config,
+                export_subtitles: true,
+            };
 
             // Spawn asynchronous job execution in Tokio background thread
             tokio::spawn(async move {
@@ -316,7 +331,10 @@ impl MainWindow {
                         .send_blocking(UiMessage::Progress(updated_job.progress.clone()));
                 };
 
-                match orchestrator.run_job(job, cancel_token, on_progress).await {
+                match orchestrator
+                    .run_job_with_options(job, pipeline_options, cancel_token, on_progress)
+                    .await
+                {
                     Ok(artifact) => {
                         let _ = sender_clone
                             .send(UiMessage::Success(

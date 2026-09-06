@@ -78,3 +78,67 @@ async fn test_ffmpeg_probe_and_export() {
     assert!(artifact.duration_ms >= 900);
     assert!(artifact.size_bytes > 0);
 }
+
+#[tokio::test]
+async fn test_ffmpeg_video_remuxing() {
+    let dir = tempdir().unwrap();
+    let video_mp4 = dir.path().join("source_video.mp4");
+    let dubbed_audio = dir.path().join("dubbed_audio.mp3");
+    let remuxed_mp4 = dir.path().join("remuxed_video.mp4");
+
+    // 1. Generate 1s test video
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=320x240:rate=10",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(&video_mp4)
+        .status()
+        .expect("Failed to create test video");
+
+    assert!(status.success(), "Failed to create test video with ffmpeg");
+
+    // 2. Generate 1s test audio
+    let status_a = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+        ])
+        .arg(&dubbed_audio)
+        .status()
+        .expect("Failed to create test audio");
+
+    assert!(status_a.success());
+
+    // 3. Remux video + audio
+    let engine = FfmpegAudioEngine::new();
+    let result = engine
+        .remux_video(&video_mp4, &dubbed_audio, &remuxed_mp4)
+        .await
+        .expect("Failed to remux video");
+
+    assert!(result.exists());
+    assert_eq!(result, remuxed_mp4);
+
+    let doc = engine
+        .inspect_and_validate(&remuxed_mp4, 50 * 1024 * 1024)
+        .await
+        .expect("Failed to validate remuxed video");
+
+    assert_eq!(doc.format, AudioFormat::Mp4);
+    assert!(doc.metadata.duration_ms >= 800);
+}

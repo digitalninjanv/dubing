@@ -151,3 +151,104 @@ fn test_transcript_speaker_and_timing() {
     );
     assert_eq!(transcript.total_duration_ms(), 5500);
 }
+
+#[test]
+fn test_video_format_detection() {
+    assert!(AudioFormat::Mp4.is_video());
+    assert!(AudioFormat::Mkv.is_video());
+    assert!(AudioFormat::Mov.is_video());
+    assert!(AudioFormat::Webm.is_video());
+
+    assert!(!AudioFormat::Mp3.is_video());
+    assert!(!AudioFormat::Wav.is_video());
+    assert!(!AudioFormat::Flac.is_video());
+    assert!(!AudioFormat::M4a.is_video());
+
+    assert_eq!(AudioFormat::from_extension("mp4"), Some(AudioFormat::Mp4));
+    assert_eq!(AudioFormat::from_extension("mkv"), Some(AudioFormat::Mkv));
+    assert_eq!(AudioFormat::from_extension("mov"), Some(AudioFormat::Mov));
+}
+
+#[test]
+fn test_translation_tone_directive() {
+    use audiodub::domain::TranslationTone;
+
+    assert_eq!(
+        TranslationTone::from_str_loose("casual"),
+        TranslationTone::Casual
+    );
+    assert_eq!(
+        TranslationTone::from_str_loose("Formal"),
+        TranslationTone::Formal
+    );
+    assert_eq!(
+        TranslationTone::from_str_loose("dramatic"),
+        TranslationTone::Creative
+    );
+    assert_eq!(
+        TranslationTone::from_str_loose("unknown"),
+        TranslationTone::Neutral
+    );
+
+    assert!(TranslationTone::Casual
+        .prompt_directive()
+        .contains("casual"));
+    assert!(TranslationTone::Formal
+        .prompt_directive()
+        .contains("formal"));
+    assert!(TranslationTone::Creative
+        .prompt_directive()
+        .contains("creative"));
+    assert!(TranslationTone::Neutral
+        .prompt_directive()
+        .contains("neutral"));
+}
+
+#[test]
+fn test_speaker_voice_config() {
+    use audiodub::domain::SpeakerVoiceConfig;
+
+    let cfg = SpeakerVoiceConfig::new(Some("Kore".to_string()), Some("Puck".to_string()));
+    assert_eq!(cfg.get_voice_for(Some("Speaker 1")), Some("Kore"));
+    assert_eq!(cfg.get_voice_for(Some("Speaker 2")), Some("Puck"));
+    assert_eq!(cfg.get_voice_for(None), Some("Kore"));
+
+    let empty_cfg = SpeakerVoiceConfig::default();
+    assert_eq!(empty_cfg.get_voice_for(Some("Speaker 1")), None);
+}
+
+#[test]
+fn test_subtitle_generation() {
+    use audiodub::domain::{
+        format_timestamp_srt, format_timestamp_vtt, generate_bilingual_txt, generate_srt,
+        generate_vtt, LanguageId, TranslatedDocument, TranslationSegment,
+    };
+
+    assert_eq!(format_timestamp_srt(0), "00:00:00,000");
+    assert_eq!(format_timestamp_srt(65432), "00:01:05,432");
+    assert_eq!(format_timestamp_vtt(65432), "00:01:05.432");
+
+    let doc = TranslatedDocument::new(
+        LanguageId::new("id"),
+        LanguageId::new("en"),
+        vec![TranslationSegment {
+            segment_id: "seg_1".to_string(),
+            speaker_id: Some("Speaker 1".to_string()),
+            source_start_ms: 1000,
+            source_end_ms: 3500,
+            source_text: "Halo dunia.".to_string(),
+            translated_text: "Hello world.".to_string(),
+        }],
+    );
+
+    let srt = generate_srt(&doc);
+    assert!(srt.contains("1\n00:00:01,000 --> 00:00:03,500\nHello world."));
+
+    let vtt = generate_vtt(&doc);
+    assert!(vtt.starts_with("WEBVTT\n\n"));
+    assert!(vtt.contains("00:00:01.000 --> 00:00:03.500\nHello world."));
+
+    let txt = generate_bilingual_txt(&doc);
+    assert!(txt.contains("Original  : Halo dunia."));
+    assert!(txt.contains("Translated: Hello world."));
+}

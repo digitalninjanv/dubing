@@ -60,6 +60,7 @@ impl TextTranslator for CrashMockTranslator {
         &self,
         _transcript: &Transcript,
         target_lang: &LanguageId,
+        _tone: audiodub::domain::TranslationTone,
     ) -> Result<TranslatedDocument, DomainError> {
         Ok(TranslatedDocument::new(
             LanguageId::new("id"),

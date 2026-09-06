@@ -1,6 +1,8 @@
 use crate::domain::AudioArtifact;
 use gtk4::prelude::*;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct ResultView {
@@ -11,10 +13,16 @@ pub struct ResultView {
     warning_label: gtk4::Label,
     #[allow(dead_code)]
     play_btn: gtk4::Button,
+    play_video_btn: gtk4::Button,
+    open_subtitles_btn: gtk4::Button,
+    open_bilingual_btn: gtk4::Button,
     #[allow(dead_code)]
     open_folder_btn: gtk4::Button,
     new_btn: gtk4::Button,
-    current_output_path: std::rc::Rc<std::cell::RefCell<Option<PathBuf>>>,
+    current_output_path: Rc<RefCell<Option<PathBuf>>>,
+    current_video_path: Rc<RefCell<Option<PathBuf>>>,
+    current_subtitle_path: Rc<RefCell<Option<PathBuf>>>,
+    current_txt_path: Rc<RefCell<Option<PathBuf>>>,
 }
 
 impl Default for ResultView {
@@ -36,7 +44,7 @@ impl ResultView {
         icon.add_css_class("success");
         container.append(&icon);
 
-        let title = gtk4::Label::new(Some("Audio Dubbing Complete!"));
+        let title = gtk4::Label::new(Some("Dubbing & Translation Complete!"));
         title.add_css_class("title-1");
         container.append(&title);
 
@@ -81,29 +89,53 @@ impl ResultView {
         info_frame.set_child(Some(&info_box));
         container.append(&info_frame);
 
-        // Action Buttons
-        let actions_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        actions_box.set_halign(gtk4::Align::Center);
-        actions_box.set_margin_top(24);
+        // Action Buttons Row 1 (Media Playback & Subtitles)
+        let media_actions_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        media_actions_box.set_halign(gtk4::Align::Center);
+        media_actions_box.set_margin_top(20);
 
-        let play_btn = gtk4::Button::with_label("▶ Play Audio");
+        let play_btn = gtk4::Button::with_label("▶ Play Dubbed Audio");
         play_btn.add_css_class("suggested-action");
         play_btn.add_css_class("pill");
+
+        let play_video_btn = gtk4::Button::with_label("🎬 Play Dubbed Video");
+        play_video_btn.add_css_class("suggested-action");
+        play_video_btn.add_css_class("pill");
+        play_video_btn.set_visible(false);
+
+        let open_subtitles_btn = gtk4::Button::with_label("📄 Open Subtitles (.srt)");
+        open_subtitles_btn.add_css_class("pill");
+        open_subtitles_btn.set_visible(false);
+
+        let open_bilingual_btn = gtk4::Button::with_label("📝 Bilingual Script (.txt)");
+        open_bilingual_btn.add_css_class("pill");
+        open_bilingual_btn.set_visible(false);
+
+        media_actions_box.append(&play_btn);
+        media_actions_box.append(&play_video_btn);
+        media_actions_box.append(&open_subtitles_btn);
+        media_actions_box.append(&open_bilingual_btn);
+        container.append(&media_actions_box);
+
+        // Action Buttons Row 2 (Folder & Reset)
+        let actions_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+        actions_box.set_halign(gtk4::Align::Center);
+        actions_box.set_margin_top(12);
 
         let open_folder_btn = gtk4::Button::with_label("Open Containing Folder");
         open_folder_btn.add_css_class("pill");
 
-        actions_box.append(&play_btn);
-        actions_box.append(&open_folder_btn);
-        container.append(&actions_box);
-
         let new_btn = gtk4::Button::with_label("Start Another Translation");
         new_btn.add_css_class("pill");
-        new_btn.set_halign(gtk4::Align::Center);
-        new_btn.set_margin_top(16);
-        container.append(&new_btn);
 
-        let current_output_path = std::rc::Rc::new(std::cell::RefCell::new(None::<PathBuf>));
+        actions_box.append(&open_folder_btn);
+        actions_box.append(&new_btn);
+        container.append(&actions_box);
+
+        let current_output_path = Rc::new(RefCell::new(None::<PathBuf>));
+        let current_video_path = Rc::new(RefCell::new(None::<PathBuf>));
+        let current_subtitle_path = Rc::new(RefCell::new(None::<PathBuf>));
+        let current_txt_path = Rc::new(RefCell::new(None::<PathBuf>));
 
         // Connect open folder action
         let path_clone = current_output_path.clone();
@@ -123,6 +155,30 @@ impl ResultView {
             }
         });
 
+        // Connect play video action
+        let vid_clone = current_video_path.clone();
+        play_video_btn.connect_clicked(move |_| {
+            if let Some(ref path) = *vid_clone.borrow() {
+                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+            }
+        });
+
+        // Connect open subtitles action
+        let sub_clone = current_subtitle_path.clone();
+        open_subtitles_btn.connect_clicked(move |_| {
+            if let Some(ref path) = *sub_clone.borrow() {
+                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+            }
+        });
+
+        // Connect open bilingual txt action
+        let txt_clone = current_txt_path.clone();
+        open_bilingual_btn.connect_clicked(move |_| {
+            if let Some(ref path) = *txt_clone.borrow() {
+                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+            }
+        });
+
         Self {
             container,
             info_label,
@@ -130,9 +186,15 @@ impl ResultView {
             warning_box,
             warning_label,
             play_btn,
+            play_video_btn,
+            open_subtitles_btn,
+            open_bilingual_btn,
             open_folder_btn,
             new_btn,
             current_output_path,
+            current_video_path,
+            current_subtitle_path,
+            current_txt_path,
         }
     }
 
@@ -142,16 +204,42 @@ impl ResultView {
 
     pub fn set_result(&self, artifact: &AudioArtifact, source_lang: &str, target_lang: &str) {
         *self.current_output_path.borrow_mut() = Some(artifact.path.clone());
+        *self.current_video_path.borrow_mut() = artifact.video_path.clone();
+        *self.current_subtitle_path.borrow_mut() = artifact.subtitle_srt_path.clone();
+        *self.current_txt_path.borrow_mut() = artifact.transcript_txt_path.clone();
+
+        self.play_video_btn
+            .set_visible(artifact.video_path.is_some());
+        self.open_subtitles_btn
+            .set_visible(artifact.subtitle_srt_path.is_some());
+        self.open_bilingual_btn
+            .set_visible(artifact.transcript_txt_path.is_some());
 
         let mins = artifact.duration_ms / 60000;
         let secs = (artifact.duration_ms % 60000) / 1000;
         let size_mb = (artifact.size_bytes as f64) / (1024.0 * 1024.0);
 
-        self.info_label.set_text(&format!(
-            "Translated from {} → {}\nDuration: {:02}:{:02} · File Size: {:.2} MB",
+        let mut details = format!(
+            "Translated from {} → {}\nDuration: {:02}:{:02} · Audio: {:.2} MB",
             source_lang, target_lang, mins, secs, size_mb
-        ));
+        );
 
+        if let Some(ref vid) = artifact.video_path {
+            details.push_str(&format!(
+                "\n🎬 Dubbed Video: {}",
+                vid.file_name().and_then(|f| f.to_str()).unwrap_or("video")
+            ));
+        }
+        if let Some(ref srt) = artifact.subtitle_srt_path {
+            details.push_str(&format!(
+                "\n📄 Subtitles: {}",
+                srt.file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("subtitles.srt")
+            ));
+        }
+
+        self.info_label.set_text(&details);
         self.path_label
             .set_text(&format!("Saved to: {}", artifact.path.display()));
 

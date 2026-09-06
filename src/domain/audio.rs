@@ -11,9 +11,16 @@ pub enum AudioFormat {
     Flac,
     Webm,
     Opus,
+    Mp4,
+    Mkv,
+    Mov,
 }
 
 impl AudioFormat {
+    pub fn is_video(&self) -> bool {
+        matches!(self, Self::Mp4 | Self::Mkv | Self::Mov | Self::Webm)
+    }
+
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext.to_lowercase().as_str() {
             "mp3" => Some(Self::Mp3),
@@ -24,6 +31,9 @@ impl AudioFormat {
             "flac" => Some(Self::Flac),
             "webm" => Some(Self::Webm),
             "opus" => Some(Self::Opus),
+            "mp4" | "m4v" => Some(Self::Mp4),
+            "mkv" => Some(Self::Mkv),
+            "mov" => Some(Self::Mov),
             _ => None,
         }
     }
@@ -38,6 +48,9 @@ impl AudioFormat {
             Self::Flac => "audio/flac",
             Self::Webm => "audio/webm",
             Self::Opus => "audio/opus",
+            Self::Mp4 => "video/mp4",
+            Self::Mkv => "video/x-matroska",
+            Self::Mov => "video/quicktime",
         }
     }
 
@@ -51,6 +64,9 @@ impl AudioFormat {
             Self::Flac => "flac",
             Self::Webm => "webm",
             Self::Opus => "opus",
+            Self::Mp4 => "mp4",
+            Self::Mkv => "mkv",
+            Self::Mov => "mov",
         }
     }
 }

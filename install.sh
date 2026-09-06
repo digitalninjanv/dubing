@@ -256,7 +256,7 @@ if [ -z "${TARGET_VERSION}" ]; then
 
     # 3. Default fallback
     if [ -z "${TARGET_VERSION}" ] || [ "${TARGET_VERSION}" = "releases" ] || [ "${TARGET_VERSION}" = "null" ]; then
-        TARGET_VERSION="v0.1.0"
+        TARGET_VERSION="v0.2.0"
         log_info "Using release version: ${BOLD}${TARGET_VERSION}${RESET}"
     else
         log_info "Latest version detected: ${BOLD}${TARGET_VERSION}${RESET}"

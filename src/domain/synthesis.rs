@@ -38,10 +38,36 @@ pub struct AudioArtifact {
     pub duration_ms: u64,
     pub size_bytes: u64,
     pub quality_warnings: Vec<String>,
+    pub subtitle_srt_path: Option<PathBuf>,
+    pub subtitle_vtt_path: Option<PathBuf>,
+    pub transcript_txt_path: Option<PathBuf>,
+    pub video_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlignmentResult {
     pub aligned_files: Vec<PathBuf>,
     pub quality_warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct SpeakerVoiceConfig {
+    pub speaker_1_voice: Option<String>,
+    pub speaker_2_voice: Option<String>,
+}
+
+impl SpeakerVoiceConfig {
+    pub fn new(s1: Option<String>, s2: Option<String>) -> Self {
+        Self {
+            speaker_1_voice: s1.filter(|s| !s.trim().is_empty()),
+            speaker_2_voice: s2.filter(|s| !s.trim().is_empty()),
+        }
+    }
+
+    pub fn get_voice_for(&self, speaker_id: Option<&str>) -> Option<&str> {
+        match speaker_id {
+            Some(s) if s.contains('2') => self.speaker_2_voice.as_deref(),
+            _ => self.speaker_1_voice.as_deref(),
+        }
+    }
 }

@@ -3,14 +3,22 @@ use super::ports::{
 };
 use crate::config::{AppSettings, AudioConfig};
 use crate::domain::{
-    AudioArtifact, AudioFormat, DomainError, Job, LanguageRegistry, PipelineStage,
-    SynthesizedSegment, VoiceProfile,
+    generate_bilingual_txt, generate_srt, generate_vtt, AudioArtifact, AudioFormat, DomainError,
+    Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment, TranslationTone,
+    VoiceProfile,
 };
 use crate::infrastructure::filesystem::{AppPaths, CleanupManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Clone, Default)]
+pub struct PipelineOptions {
+    pub tone: TranslationTone,
+    pub voice_config: Option<SpeakerVoiceConfig>,
+    pub export_subtitles: bool,
+}
 
 pub struct PipelineOrchestrator {
     transcriber: Arc<dyn SpeechTranscriber>,
@@ -64,10 +72,25 @@ impl PipelineOrchestrator {
         }
     }
 
-    /// Runs a job from start to finish or resumes from previous stage
+    /// Runs a job from start to finish with default options
     pub async fn run_job<F>(
         &self,
+        job: Job,
+        cancel_token: CancellationToken,
+        on_progress: F,
+    ) -> Result<AudioArtifact, DomainError>
+    where
+        F: Fn(&Job) + Send + Sync + 'static,
+    {
+        self.run_job_with_options(job, PipelineOptions::default(), cancel_token, on_progress)
+            .await
+    }
+
+    /// Runs a job from start to finish or resumes from previous stage with custom options
+    pub async fn run_job_with_options<F>(
+        &self,
         mut job: Job,
+        options: PipelineOptions,
         cancel_token: CancellationToken,
         on_progress: F,
     ) -> Result<AudioArtifact, DomainError>
@@ -198,7 +221,7 @@ impl PipelineOrchestrator {
 
             let tr = self
                 .translator
-                .translate(&transcript, &job.target_language)
+                .translate(&transcript, &job.target_language, options.tone)
                 .await?;
 
             let translated_path = job_dir.join("translated.json");
@@ -252,12 +275,18 @@ impl PipelineOrchestrator {
         let mut voice_map: HashMap<String, VoiceProfile> = HashMap::new();
         let unique_speakers = transcript.unique_speakers();
         for (idx, spk) in unique_speakers.iter().enumerate() {
-            let voice_name = &ordered_voices[idx % ordered_voices.len()];
+            let voice_name = options
+                .voice_config
+                .as_ref()
+                .and_then(|c| c.get_voice_for(Some(spk.as_str())))
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| ordered_voices[idx % ordered_voices.len()].clone());
+
             voice_map.insert(
                 spk.clone(),
                 VoiceProfile {
                     id: format!("voice_{}", idx),
-                    voice_name: voice_name.clone(),
+                    voice_name,
                     language: job.target_language.as_str().to_string(),
                     style: None,
                     speed: 1.0,
@@ -265,9 +294,16 @@ impl PipelineOrchestrator {
             );
         }
 
+        let default_voice_name = options
+            .voice_config
+            .as_ref()
+            .and_then(|c| c.get_voice_for(None))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| base_default_voice.to_string());
+
         let default_voice = VoiceProfile {
             id: "default".to_string(),
-            voice_name: base_default_voice.to_string(),
+            voice_name: default_voice_name,
             language: job.target_language.as_str().to_string(),
             style: None,
             speed: 1.0,
@@ -369,7 +405,7 @@ impl PipelineOrchestrator {
         );
         let final_output_path = AppPaths::outputs_dir().join(&output_file_name);
 
-        let artifact = self
+        let mut artifact = self
             .audio_engine
             .export_final(
                 &alignment_res.aligned_files,
@@ -379,6 +415,67 @@ impl PipelineOrchestrator {
                 alignment_res.quality_warnings,
             )
             .await?;
+
+        // Generate Subtitle artifacts (.srt, .vtt, bilingual .txt)
+        let file_stem = job
+            .source_audio
+            .path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("audio");
+
+        let srt_path = AppPaths::outputs_dir().join(format!(
+            "{}_{}.srt",
+            file_stem,
+            job.target_language.as_str()
+        ));
+        let vtt_path = AppPaths::outputs_dir().join(format!(
+            "{}_{}.vtt",
+            file_stem,
+            job.target_language.as_str()
+        ));
+        let txt_path = AppPaths::outputs_dir().join(format!(
+            "{}_{}_bilingual.txt",
+            file_stem,
+            job.target_language.as_str()
+        ));
+
+        if let Ok(()) = std::fs::write(&srt_path, generate_srt(&translated)) {
+            artifact.subtitle_srt_path = Some(srt_path);
+        }
+        if let Ok(()) = std::fs::write(&vtt_path, generate_vtt(&translated)) {
+            artifact.subtitle_vtt_path = Some(vtt_path);
+        }
+        if let Ok(()) = std::fs::write(&txt_path, generate_bilingual_txt(&translated)) {
+            artifact.transcript_txt_path = Some(txt_path);
+        }
+
+        // Fast video remuxing if source input is video container
+        if job.source_audio.format.is_video() {
+            let ext = job.source_audio.format.extension();
+            let remuxed_video_path = AppPaths::outputs_dir().join(format!(
+                "{}_{}_dubbed.{}",
+                file_stem,
+                job.target_language.as_str(),
+                ext
+            ));
+            match self
+                .audio_engine
+                .remux_video(&job.source_audio.path, &artifact.path, &remuxed_video_path)
+                .await
+            {
+                Ok(vp) => {
+                    tracing::info!("Remuxed dubbed video generated at: {}", vp.display());
+                    artifact.video_path = Some(vp);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to remux dubbed video: {}", e);
+                    artifact
+                        .quality_warnings
+                        .push(format!("Video remuxing failed: {}", e));
+                }
+            }
+        }
 
         // 7. Validating Output (Quality Gate)
         update_stage(
