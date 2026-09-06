@@ -235,22 +235,29 @@ verify_dependencies
 # Determine Version to Download
 if [ -z "${TARGET_VERSION}" ]; then
     log_info "Detecting latest release of ${APP_DISPLAY_NAME}..."
-    LATEST_API_URL="https://api.github.com/repos/${REPO}/releases/latest"
     
-    # Try GitHub API first
-    HTTP_RESP="$(curl -sSL -H "Accept: application/vnd.github.v3+json" "${LATEST_API_URL}" || true)"
-    TARGET_VERSION="$(echo "${HTTP_RESP}" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | cut -d '"' -f 4 || true)"
-
-    # Fallback to direct redirect header if rate limited
-    if [ -z "${TARGET_VERSION}" ]; then
-        log_warn "GitHub API rate limit reached or unavailable, resolving release redirect..."
-        REDIRECT_URL="$(curl -Ls -o /dev/null -w %{url_effective} "https://github.com/${REPO}/releases/latest" || true)"
-        TARGET_VERSION="$(basename "${REDIRECT_URL}" || true)"
+    # 1. Try gh CLI if available and authenticated
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        TARGET_VERSION="$(gh release view --repo "${REPO}" --json tagName -q .tagName 2>/dev/null || true)"
     fi
 
-    if [ -z "${TARGET_VERSION}" ] || [ "${TARGET_VERSION}" = "releases" ]; then
+    # 2. Try GitHub API
+    if [ -z "${TARGET_VERSION}" ]; then
+        AUTH_HEADER=()
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+            AUTH_HEADER=(-H "Authorization: token ${GITHUB_TOKEN}")
+        elif [ -n "${GH_TOKEN:-}" ]; then
+            AUTH_HEADER=(-H "Authorization: token ${GH_TOKEN}")
+        fi
+        
+        HTTP_RESP="$(curl -sSL "${AUTH_HEADER[@]}" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${REPO}/releases/latest" || true)"
+        TARGET_VERSION="$(echo "${HTTP_RESP}" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | cut -d '"' -f 4 || true)"
+    fi
+
+    # 3. Default fallback
+    if [ -z "${TARGET_VERSION}" ] || [ "${TARGET_VERSION}" = "releases" ] || [ "${TARGET_VERSION}" = "null" ]; then
         TARGET_VERSION="v0.1.0"
-        log_warn "Defaulting to initial release version: ${TARGET_VERSION}"
+        log_info "Using release version: ${BOLD}${TARGET_VERSION}${RESET}"
     else
         log_info "Latest version detected: ${BOLD}${TARGET_VERSION}${RESET}"
     fi
@@ -266,16 +273,47 @@ CHECKSUM_URL="${BASE_URL}/checksums.sha256"
 TEMP_DIR="$(mktemp -d -t audiodub-install-XXXXXX)"
 cd "${TEMP_DIR}"
 
-log_info "Downloading ${ARCHIVE_NAME}..."
-if ! curl -fSL --progress-bar "${DOWNLOAD_URL}" -o "${ARCHIVE_NAME}"; then
-    log_error "Failed to download ${DOWNLOAD_URL}."
-    log_error "Please check your network connection or verify that release ${TARGET_VERSION} exists."
+DOWNLOAD_SUCCESS=0
+
+# Attempt 1: Using GitHub CLI if available and authenticated
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    log_info "Downloading ${ARCHIVE_NAME} via GitHub CLI..."
+    if gh release download "${TARGET_VERSION}" --repo "${REPO}" -p "${ARCHIVE_NAME}" --dir . >/dev/null 2>&1; then
+        DOWNLOAD_SUCCESS=1
+        gh release download "${TARGET_VERSION}" --repo "${REPO}" -p "checksums.sha256" --dir . >/dev/null 2>&1 || true
+    fi
+fi
+
+# Attempt 2: Using curl with optional authentication header
+if [ "${DOWNLOAD_SUCCESS}" -eq 0 ]; then
+    log_info "Downloading ${ARCHIVE_NAME}..."
+    AUTH_HEADER=()
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        AUTH_HEADER=(-H "Authorization: token ${GITHUB_TOKEN}")
+    elif [ -n "${GH_TOKEN:-}" ]; then
+        AUTH_HEADER=(-H "Authorization: token ${GH_TOKEN}")
+    fi
+
+    if curl -fSL "${AUTH_HEADER[@]}" --progress-bar "${DOWNLOAD_URL}" -o "${ARCHIVE_NAME}" 2>/dev/null; then
+        DOWNLOAD_SUCCESS=1
+        curl -fsSL "${AUTH_HEADER[@]}" "${CHECKSUM_URL}" -o "checksums.sha256" 2>/dev/null || true
+    fi
+fi
+
+if [ "${DOWNLOAD_SUCCESS}" -eq 0 ]; then
+    log_error "Failed to download ${ARCHIVE_NAME} (Release: ${TARGET_VERSION})."
+    printf "\n  ${YELLOW}${BOLD}Tips:${RESET}\n"
+    printf "  - If repository '${REPO}' is private, please authenticate first:\n"
+    printf "      export GITHUB_TOKEN=\"<your_personal_access_token>\"\n"
+    printf "      # or: gh auth login\n"
+    printf "  - Or change the repository visibility to Public in GitHub:\n"
+    printf "      Settings -> Danger Zone -> Change repository visibility -> Make public\n\n"
     exit 1
 fi
 
 # Checksum Verification
 log_info "Verifying SHA256 checksum..."
-if curl -fsSL "${CHECKSUM_URL}" -o "checksums.sha256" 2>/dev/null; then
+if [ -f "checksums.sha256" ]; then
     if grep "${ARCHIVE_NAME}" checksums.sha256 > specific_checksum.sha256 2>/dev/null; then
         if sha256sum --check --status specific_checksum.sha256; then
             log_success "Checksum verified successfully!"
@@ -302,10 +340,9 @@ mkdir -p "${METAINFO_DIR}"
 
 # Install Binary
 log_info "Installing executable to ${BIN_DIR}/${APP_NAME}..."
-if [ -f "bin/${APP_NAME}" ]; then
-    install -m 755 "bin/${APP_NAME}" "${BIN_DIR}/${APP_NAME}"
-elif [ -f "${APP_NAME}" ]; then
-    install -m 755 "${APP_NAME}" "${BIN_DIR}/${APP_NAME}"
+FOUND_BIN="$(find . -type f -name "${APP_NAME}" | head -n 1)"
+if [ -n "${FOUND_BIN}" ] && [ -f "${FOUND_BIN}" ]; then
+    install -m 755 "${FOUND_BIN}" "${BIN_DIR}/${APP_NAME}"
 else
     log_error "Binary '${APP_NAME}' not found inside archive."
     exit 1
@@ -313,10 +350,9 @@ fi
 
 # Install Desktop Entry
 log_info "Registering desktop application..."
-if [ -f "share/applications/${APP_ID}.desktop" ]; then
-    cp -f "share/applications/${APP_ID}.desktop" "${APPS_DIR}/${APP_ID}.desktop"
-elif [ -f "data/${APP_ID}.desktop" ]; then
-    cp -f "data/${APP_ID}.desktop" "${APPS_DIR}/${APP_ID}.desktop"
+FOUND_DESKTOP="$(find . -type f -name "${APP_ID}.desktop" | head -n 1)"
+if [ -n "${FOUND_DESKTOP}" ] && [ -f "${FOUND_DESKTOP}" ]; then
+    cp -f "${FOUND_DESKTOP}" "${APPS_DIR}/${APP_ID}.desktop"
 fi
 
 # Ensure Exec line in .desktop points to installed binary
@@ -325,17 +361,15 @@ if [ -f "${APPS_DIR}/${APP_ID}.desktop" ]; then
 fi
 
 # Install Icon
-if [ -f "share/icons/hicolor/scalable/apps/${APP_ID}.svg" ]; then
-    cp -f "share/icons/hicolor/scalable/apps/${APP_ID}.svg" "${ICONS_DIR}/${APP_ID}.svg"
-elif [ -f "data/icons/hicolor/scalable/apps/${APP_ID}.svg" ]; then
-    cp -f "data/icons/hicolor/scalable/apps/${APP_ID}.svg" "${ICONS_DIR}/${APP_ID}.svg"
+FOUND_ICON="$(find . -type f -name "${APP_ID}.svg" | head -n 1)"
+if [ -n "${FOUND_ICON}" ] && [ -f "${FOUND_ICON}" ]; then
+    cp -f "${FOUND_ICON}" "${ICONS_DIR}/${APP_ID}.svg"
 fi
 
 # Install Metainfo
-if [ -f "share/metainfo/${APP_ID}.metainfo.xml" ]; then
-    cp -f "share/metainfo/${APP_ID}.metainfo.xml" "${METAINFO_DIR}/${APP_ID}.metainfo.xml"
-elif [ -f "data/${APP_ID}.metainfo.xml" ]; then
-    cp -f "data/${APP_ID}.metainfo.xml" "${METAINFO_DIR}/${APP_ID}.metainfo.xml"
+FOUND_METAINFO="$(find . -type f -name "${APP_ID}.metainfo.xml" | head -n 1)"
+if [ -n "${FOUND_METAINFO}" ] && [ -f "${FOUND_METAINFO}" ]; then
+    cp -f "${FOUND_METAINFO}" "${METAINFO_DIR}/${APP_ID}.metainfo.xml"
 fi
 
 # Refresh Desktop Databases
