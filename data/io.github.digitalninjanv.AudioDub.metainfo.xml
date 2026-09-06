@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.digitalninjanv.AudioDub</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>AudioDub AI</name>
+  <summary>Native desktop audio translation and voice dubbing</summary>
+  <description>
+    <p>
+      AudioDub AI is a native Linux desktop application built with GTK4 and Libadwaita that converts spoken audio from one language into natural spoken audio in another language.
+    </p>
+    <p>
+      Features include automatic language detection, speaker diarization, natural timestamp-aligned speech generation, and local deterministic audio assembly using FFmpeg.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.digitalninjanv.AudioDub.desktop</launchable>
+  <url type="homepage">https://github.com/digitalninjanv/audiodub</url>
+  <provides>
+    <binary>audiodub</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-09-06">
+      <description>
+        <p>Initial release of AudioDub AI for Fedora Linux.</p>
+      </description>
+    </release>
+  </releases>
+</component>

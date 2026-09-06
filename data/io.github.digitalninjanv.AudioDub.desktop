@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=AudioDub AI
+GenericName=Audio Translator & Dubbing
+Comment=AI-powered spoken audio translation and dubbing
+Exec=audiodub %U
+Icon=io.github.digitalninjanv.AudioDub
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;AudioVideoEditing;Translation;
+MimeType=audio/mpeg;audio/wav;audio/x-m4a;audio/aac;audio/ogg;audio/flac;audio/webm;audio/opus;
+Keywords=Audio;Translate;Dubbing;Voice;Speech;Gemini;AI;
+StartupNotify=true
