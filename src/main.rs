@@ -1,9 +1,10 @@
 use audiodub::app::AudioDubApp;
-use audiodub::application::ports::{AudioEngine, SecretStore};
+use audiodub::application::ports::{AudioEngine, SecretStore, SpeechSynthesizer};
 use audiodub::application::{PipelineOptions, PipelineOrchestrator};
 use audiodub::config::AppSettings;
 use audiodub::domain::{
     BatchItemStatus, BatchJob, LanguageId, LanguageRegistry, SpeakerVoiceConfig, TranslationTone,
+    VoiceProfile,
 };
 use audiodub::infrastructure::ffmpeg::FfmpegAudioEngine;
 use audiodub::infrastructure::filesystem::FileJobRepository;
@@ -22,7 +23,11 @@ async fn main() -> glib::ExitCode {
 
     // Check if CLI mode was requested
     if args.len() > 1
-        && (args[1] == "translate" || args[1] == "batch" || args[1] == "--help" || args[1] == "-h")
+        && (args[1] == "translate"
+            || args[1] == "batch"
+            || args[1] == "tts"
+            || args[1] == "--help"
+            || args[1] == "-h")
     {
         if args[1] == "--help" || args[1] == "-h" {
             print_usage();
@@ -44,6 +49,14 @@ async fn main() -> glib::ExitCode {
             }
             return glib::ExitCode::SUCCESS;
         }
+
+        if args[1] == "tts" {
+            if let Err(e) = run_tts_cli(&args[2..]).await {
+                eprintln!("\nError: {}", e);
+                return glib::ExitCode::FAILURE;
+            }
+            return glib::ExitCode::SUCCESS;
+        }
     }
 
     // Default: Launch Native Desktop GUI
@@ -56,7 +69,8 @@ fn print_usage() {
     println!("  audiodub                                      Launch GTK4 / Libadwaita GUI");
     println!("  audiodub translate <input> --target <lang>    Translate single file in CLI mode");
     println!("  audiodub batch <file1> <file2> --target <lang> Batch process multiple media files");
-    println!("\nOptions:");
+    println!("  audiodub tts \"<text>\" [options]               Synthesize expressive speech directly via CLI");
+    println!("\nTranslation Options:");
     println!("  --target, -t <lang>       Target language code (e.g., en, id, ja, es, ko)");
     println!("  --source, -s <lang>       Source language code (default: auto)");
     println!("  --output, -o <path>       Output file path");
@@ -68,6 +82,13 @@ fn print_usage() {
     );
     println!("  --voice-2 <name>          Voice name for Speaker 2");
     println!("  --subtitles               Export .srt, .vtt, and bilingual transcript files");
+    println!("\nTTS Studio Options:");
+    println!(
+        "  --voice, -v <name>        TTS voice: Puck, Charon, Kore, Fenrir, Aoede (default: Puck)"
+    );
+    println!("  --style <instruction>     Speech style / emotion prompt (e.g. \"whisper\", \"dramatic\")");
+    println!("  --speed <float>           Speaking speed multiplier: 0.8 - 1.3 (default: 1.0)");
+    println!("  --output, -o <path>       Output audio path (default: synthesized_speech.mp3)");
 }
 
 async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -379,6 +400,136 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
         }
     }
     println!("==========================================================\n");
+
+    Ok(())
+}
+
+async fn run_tts_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.is_empty() {
+        return Err(
+            "Text required. Usage: audiodub tts \"<text>\" [--voice <name>] [--style <prompt>] [--speed <float>] [--output <path>]"
+                .into(),
+        );
+    }
+
+    let text = args[0].clone();
+    let mut voice_name = "Puck".to_string();
+    let mut style_instruction: Option<String> = None;
+    let mut speed: f32 = 1.0;
+    let mut output_path = PathBuf::from("synthesized_speech.mp3");
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--voice" | "-v" if i + 1 < args.len() => {
+                voice_name = args[i + 1].clone();
+                i += 1;
+            }
+            "--style" if i + 1 < args.len() => {
+                style_instruction = Some(args[i + 1].clone());
+                i += 1;
+            }
+            "--speed" if i + 1 < args.len() => {
+                if let Ok(s) = args[i + 1].parse::<f32>() {
+                    speed = s.clamp(0.5, 2.0);
+                }
+                i += 1;
+            }
+            "--output" | "-o" if i + 1 < args.len() => {
+                output_path = PathBuf::from(&args[i + 1]);
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    let secret_store = StandardSecretStore::new();
+    let api_key = match secret_store.get_api_key() {
+        Ok(Some(k)) if !k.trim().is_empty() => k.trim().to_string(),
+        _ => match env::var("GEMINI_API_KEY") {
+            Ok(k) if !k.trim().is_empty() => k.trim().to_string(),
+            _ => {
+                return Err(
+                    "Gemini API key not found. Set GEMINI_API_KEY env or configure in GUI Settings."
+                        .into(),
+                );
+            }
+        },
+    };
+
+    println!("Starting Text-to-Speech synthesis...");
+    println!("  Voice:  {}", voice_name);
+    if let Some(ref style) = style_instruction {
+        println!("  Style:  {}", style);
+    }
+    println!("  Speed:  {:.2}x", speed);
+    println!("  Output: {}", output_path.display());
+
+    let settings = AppSettings::default();
+    let client = GeminiClient::new(api_key);
+    let synthesizer = GeminiSynthesizer::new(client, settings.models.tts.clone());
+
+    let voice_profile = VoiceProfile {
+        id: voice_name.to_lowercase(),
+        voice_name,
+        language: "auto".to_string(),
+        style: style_instruction.clone(),
+        speed,
+    };
+
+    let temp_wav = tempfile::Builder::new()
+        .prefix("tts_cli_")
+        .suffix(".wav")
+        .tempfile()?;
+    let temp_wav_path = temp_wav.path().to_path_buf();
+
+    let seg = synthesizer
+        .synthesize_text(
+            &text,
+            &voice_profile,
+            style_instruction.as_deref(),
+            &temp_wav_path,
+        )
+        .await?;
+
+    let final_wav_path = if (speed - 1.0).abs() > 0.05 {
+        let stretched_wav = tempfile::Builder::new()
+            .prefix("tts_cli_stretched_")
+            .suffix(".wav")
+            .tempfile()?;
+        let stretched_path = stretched_wav.path().to_path_buf();
+        audiodub::infrastructure::ffmpeg::FfmpegAligner::time_stretch(
+            &temp_wav_path,
+            &stretched_path,
+            speed as f64,
+        )?;
+        stretched_path
+    } else {
+        temp_wav_path
+    };
+
+    if output_path.extension().and_then(|s| s.to_str()) == Some("wav") {
+        std::fs::copy(&final_wav_path, &output_path)?;
+    } else {
+        let status = std::process::Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-i")
+            .arg(&final_wav_path)
+            .arg("-c:a")
+            .arg("libmp3lame")
+            .arg("-b:a")
+            .arg("192k")
+            .arg(&output_path)
+            .status()?;
+        if !status.success() {
+            return Err("ffmpeg MP3 encoding failed".into());
+        }
+    }
+
+    println!("\n✓ Text-to-Speech completed successfully!");
+    println!("  Saved to: {}", output_path.display());
+    println!("  Duration: {:.2}s\n", seg.duration_ms as f64 / 1000.0);
 
     Ok(())
 }

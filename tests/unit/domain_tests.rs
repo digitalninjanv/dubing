@@ -252,3 +252,41 @@ fn test_subtitle_generation() {
     assert!(txt.contains("Original  : Halo dunia."));
     assert!(txt.contains("Translated: Hello world."));
 }
+
+#[test]
+fn test_tts_style_preset_and_request() {
+    use audiodub::domain::{TtsRequest, TtsStylePreset, VoiceProfile};
+
+    let natural = TtsStylePreset::Natural;
+    assert_eq!(natural.display_name(), "Natural & Conversational");
+    assert!(natural.prompt_directive(None).contains("conversational"));
+
+    let storyteller = TtsStylePreset::from_index(1, None);
+    assert_eq!(storyteller, TtsStylePreset::Storyteller);
+    assert!(storyteller.prompt_directive(None).contains("storyteller"));
+
+    let custom =
+        TtsStylePreset::from_index(5, Some("Whisper softly with dramatic reverb".to_string()));
+    assert_eq!(
+        custom.prompt_directive(None),
+        "Whisper softly with dramatic reverb"
+    );
+
+    let voice = VoiceProfile {
+        id: "puck".to_string(),
+        voice_name: "Puck".to_string(),
+        language: "auto".to_string(),
+        style: Some("Energetic podcast host".to_string()),
+        speed: 1.15,
+    };
+
+    let req = TtsRequest {
+        text: "Testing TTS Studio features.".to_string(),
+        voice,
+        style_preset: TtsStylePreset::Energetic,
+        custom_style: None,
+        speed: 1.15,
+    };
+
+    assert!(req.effective_style_instruction().contains("energy"));
+}

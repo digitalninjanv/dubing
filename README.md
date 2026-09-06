@@ -60,6 +60,16 @@ sudo dnf install https://github.com/digitalninjanv/dubing/releases/latest/downlo
 
 ## Fitur Utama
 
+- 🎙️ **TTS Studio (Text-to-Speech) AI Studio Style:**
+  - Sintesis suara multi-bahasa instan dari teks input langsung tanpa perlu file rekaman sumber.
+  - **Karakter Suara Neural:** Pilih dari 5 karakter suara Google Gemini (`Puck`, `Charon`, `Kore`, `Fenrir`, `Aoede`).
+  - **Preset Gaya Bicara:** *Natural & Conversational*, *Storyteller (dramatis & ekspresif)*, *News Broadcaster (formal & berwibawa)*, *Energetic & Cheerful (upbeat)*, *Calm & Meditative (ASMR/lembut)*.
+  - **Custom Prompt Directive (AI Studio Style):** Masukkan instruksi bebas untuk memandu gaya bicara, intonasi, emosi, atau bisikan model AI secara langsung.
+  - **Pacing / Speed Multiplier:** Kendali tempo ucapan (0.8x santai, 1.0x normal, 1.15x dinamis, 1.3x cepat).
+  - Pratinjau audio instan dengan pemutar terintegrasi dan tombol **Export MP3...**.
+- 🖥️ **Desain UI/UX Modern & Responsif (Libadwaita):**
+  - **Navigasi HeaderBar Terpadu:** Beralih mulus antara **🎙️ Dubbing AI**, **🗣️ TTS Studio**, dan **📜 History** menggunakan `ViewSwitcher`.
+  - **Responsif Penuh & Anti Kunci Ukuran:** Jendela dapat dimaksimalkan, diperkecil, atau dipindahkan ke layar multi-monitor dengan mulus tanpa terhambat panjang teks atau letak tombol berkat `ScrolledWindow` dan `libadwaita::Clamp` (max 780px).
 - 🎙️ **Audio & Video Ingestion:** Mendukung format audio (MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus) serta format video populer (**MP4, MKV, MOV, WebM**) dengan *zero-transcoding fast remuxing*.
 - 🎬 **Video Dubbing & Fast Remuxing:** Menggabungkan audio dubbing baru langsung ke stream video asli secara instan menggunakan FFmpeg stream copy (`-c:v copy`), menghasilkan video ter-dubbing sempurna tanpa penurunan kualitas visual.
 - 📄 **Automatic Subtitle Export:** Menghasilkan file subtitle standar industri (**`.srt`**, **`.vtt`**) dan transkrip bilingual paralel (**`.txt`**) secara otomatis dan sinkron dengan timeline ucapan.
@@ -245,6 +255,12 @@ audiodub translate video.mp4 --target ja --tone formal --voice-1 Kore
 
 # 3. Batch processing banyak berkas media sekaligus
 audiodub batch eps1.mp4 eps2.mkv clip.wav --target en --tone casual
+
+# 4. Text-to-Speech langsung dengan custom voice dan style directive prompt
+audiodub tts "Halo dunia! Ini adalah demo suara ekspresif." --voice Puck --speed 1.15 --output halo.mp3
+
+# 5. Text-to-Speech dengan arahan gaya bicara Google AI Studio (misal: dramatis/berbisik)
+audiodub tts "Malam itu hening dan penuh misteri..." --voice Charon --style "Bicara seperti narator horor dengan nada rendah dan jeda dramatis" --output narasi.mp3
 ```
 
 ---

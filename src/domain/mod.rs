@@ -18,7 +18,8 @@ pub use subtitle::{
     SubtitleFormat,
 };
 pub use synthesis::{
-    AlignmentResult, AudioArtifact, SpeakerVoiceConfig, SynthesizedSegment, VoiceProfile,
+    AlignmentResult, AudioArtifact, SpeakerVoiceConfig, SynthesizedSegment, TtsRequest,
+    TtsStylePreset, VoiceProfile,
 };
 pub use transcript::{Transcript, TranscriptSegment, WordTimestamp};
 pub use translation::{TranslatedDocument, TranslationSegment, TranslationTone};

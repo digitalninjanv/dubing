@@ -3,7 +3,7 @@ use gtk4::prelude::*;
 
 #[derive(Clone)]
 pub struct ProgressView {
-    container: gtk4::Box,
+    scroller: gtk4::ScrolledWindow,
     progress_bar: gtk4::ProgressBar,
     stage_label: gtk4::Label,
     detail_label: gtk4::Label,
@@ -98,8 +98,23 @@ impl ProgressView {
         cancel_btn.set_margin_top(24);
         container.append(&cancel_btn);
 
+        let clamp = libadwaita::Clamp::new();
+        clamp.set_maximum_size(780);
+        clamp.set_tightening_threshold(580);
+        clamp.set_vexpand(true);
+        clamp.set_child(Some(&container));
+
+        let scroller = gtk4::ScrolledWindow::new();
+        scroller.set_hscrollbar_policy(gtk4::PolicyType::Never);
+        scroller.set_vscrollbar_policy(gtk4::PolicyType::Automatic);
+        scroller.set_propagate_natural_width(false);
+        scroller.set_propagate_natural_height(false);
+        scroller.set_vexpand(true);
+        scroller.set_hexpand(true);
+        scroller.set_child(Some(&clamp));
+
         Self {
-            container,
+            scroller,
             progress_bar,
             stage_label,
             detail_label,
@@ -108,8 +123,8 @@ impl ProgressView {
         }
     }
 
-    pub fn widget(&self) -> &gtk4::Box {
-        &self.container
+    pub fn widget(&self) -> &gtk4::ScrolledWindow {
+        &self.scroller
     }
 
     pub fn update_progress(&self, progress: &JobProgress) {

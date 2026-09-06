@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct DropzoneView {
-    container: gtk4::Box,
+    scroller: gtk4::ScrolledWindow,
     choose_file_btn: gtk4::Button,
     selected_file_label: gtk4::Label,
     file_info_box: gtk4::Box,
@@ -171,10 +171,25 @@ impl DropzoneView {
         translate_btn.set_margin_top(16);
         container.append(&translate_btn);
 
+        let clamp = libadwaita::Clamp::new();
+        clamp.set_maximum_size(780);
+        clamp.set_tightening_threshold(580);
+        clamp.set_vexpand(true);
+        clamp.set_child(Some(&container));
+
+        let scroller = gtk4::ScrolledWindow::new();
+        scroller.set_hscrollbar_policy(gtk4::PolicyType::Never);
+        scroller.set_vscrollbar_policy(gtk4::PolicyType::Automatic);
+        scroller.set_propagate_natural_width(false);
+        scroller.set_propagate_natural_height(false);
+        scroller.set_vexpand(true);
+        scroller.set_hexpand(true);
+        scroller.set_child(Some(&clamp));
+
         let selected_path = Rc::new(RefCell::new(None));
 
         Self {
-            container,
+            scroller,
             choose_file_btn,
             selected_file_label,
             file_info_box,
@@ -190,8 +205,8 @@ impl DropzoneView {
         }
     }
 
-    pub fn widget(&self) -> &gtk4::Box {
-        &self.container
+    pub fn widget(&self) -> &gtk4::ScrolledWindow {
+        &self.scroller
     }
 
     pub fn set_selected_file(&self, path: PathBuf) {

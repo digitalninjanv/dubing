@@ -97,10 +97,21 @@ impl SpeechSynthesizer for GeminiSynthesizer {
             self.client.api_key()
         );
 
-        let prompt = format!(
-            "Synthesize the following speech naturally and clearly:\n\n{}",
-            segment.translated_text
-        );
+        let prompt = match &voice.style {
+            Some(style) if !style.trim().is_empty() => {
+                format!(
+                    "Speaking style instructions: {}\n\nText to synthesize:\n{}",
+                    style.trim(),
+                    segment.translated_text
+                )
+            }
+            _ => {
+                format!(
+                    "Synthesize the following speech naturally and clearly:\n\n{}",
+                    segment.translated_text
+                )
+            }
+        };
 
         let request_body = json!({
             "contents": [
@@ -216,5 +227,28 @@ impl SpeechSynthesizer for GeminiSynthesizer {
             path: output_path.to_path_buf(),
             duration_ms: metadata.duration_ms,
         })
+    }
+
+    async fn synthesize_text(
+        &self,
+        text: &str,
+        voice: &VoiceProfile,
+        style_instruction: Option<&str>,
+        output_path: &Path,
+    ) -> Result<SynthesizedSegment, DomainError> {
+        let dummy = TranslationSegment {
+            segment_id: "direct_tts".to_string(),
+            speaker_id: None,
+            source_start_ms: 0,
+            source_end_ms: 0,
+            source_text: text.to_string(),
+            translated_text: text.to_string(),
+        };
+        let mut custom_voice = voice.clone();
+        if let Some(s) = style_instruction {
+            custom_voice.style = Some(s.to_string());
+        }
+        self.synthesize_segment(&dummy, &custom_voice, output_path)
+            .await
     }
 }

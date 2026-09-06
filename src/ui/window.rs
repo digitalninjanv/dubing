@@ -1,4 +1,6 @@
-use super::views::{DropzoneView, HistoryView, ProgressView, ResultView, SettingsDialog};
+use super::views::{
+    DropzoneView, HistoryView, ProgressView, ResultView, SettingsDialog, TtsStudioView,
+};
 use crate::application::ports::{AudioEngine, JobRepository, SecretStore};
 use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
@@ -8,6 +10,7 @@ use crate::infrastructure::gemini::{
 };
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -33,20 +36,58 @@ impl MainWindow {
     ) -> Self {
         let window = libadwaita::ApplicationWindow::new(app);
         window.set_title(Some("AudioDub AI"));
-        window.set_default_size(800, 680);
+        window.set_default_size(820, 680);
 
         let toast_overlay = libadwaita::ToastOverlay::new();
         let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
         // HeaderBar
         let header = libadwaita::HeaderBar::new();
-        let title = libadwaita::WindowTitle::new("AudioDub AI", "Desktop Voice Dubbing");
-        header.set_title_widget(Some(&title));
 
-        // History Toggle Button
-        let history_btn = gtk4::Button::from_icon_name("document-open-recent-symbolic");
-        history_btn.set_tooltip_text(Some("Translation History"));
-        header.pack_start(&history_btn);
+        // Main Stack (Root ViewStack for top-level navigation)
+        let main_stack = libadwaita::ViewStack::new();
+        main_stack.set_vexpand(true);
+        main_stack.set_hexpand(true);
+
+        // Dubbing Sub-Stack (dropzone -> progress -> result)
+        let dubbing_stack = libadwaita::ViewStack::new();
+        dubbing_stack.set_vexpand(true);
+        dubbing_stack.set_hexpand(true);
+
+        let dropzone_view = DropzoneView::new(&registry);
+        let progress_view = ProgressView::new();
+        let result_view = ResultView::new();
+        let history_view = HistoryView::new();
+        let tts_view = TtsStudioView::new();
+
+        dubbing_stack.add_named(dropzone_view.widget(), Some("dropzone"));
+        dubbing_stack.add_named(progress_view.widget(), Some("progress"));
+        dubbing_stack.add_named(result_view.widget(), Some("result"));
+
+        main_stack.add_titled_with_icon(
+            &dubbing_stack,
+            Some("dubbing"),
+            "Dubbing AI",
+            "media-record-symbolic",
+        );
+        main_stack.add_titled_with_icon(
+            tts_view.widget(),
+            Some("tts"),
+            "TTS Studio",
+            "audio-speakers-symbolic",
+        );
+        main_stack.add_titled_with_icon(
+            history_view.widget(),
+            Some("history"),
+            "History",
+            "document-open-recent-symbolic",
+        );
+
+        // Top-level ViewSwitcher in HeaderBar for modern Adwaita workflow
+        let view_switcher = libadwaita::ViewSwitcher::new();
+        view_switcher.set_stack(Some(&main_stack));
+        view_switcher.set_policy(libadwaita::ViewSwitcherPolicy::Wide);
+        header.set_title_widget(Some(&view_switcher));
 
         // Settings Button
         let settings_btn = gtk4::Button::from_icon_name("preferences-system-symbolic");
@@ -62,35 +103,21 @@ impl MainWindow {
         header.pack_end(&settings_btn);
 
         main_box.append(&header);
-
-        // View Stack
-        let view_stack = libadwaita::ViewStack::new();
-
-        let dropzone_view = DropzoneView::new(&registry);
-        let progress_view = ProgressView::new();
-        let result_view = ResultView::new();
-        let history_view = HistoryView::new();
-
-        view_stack.add_titled(dropzone_view.widget(), Some("dropzone"), "Translate");
-        view_stack.add_titled(progress_view.widget(), Some("progress"), "Progress");
-        view_stack.add_titled(result_view.widget(), Some("result"), "Result");
-        view_stack.add_titled(history_view.widget(), Some("history"), "History");
-
-        main_box.append(&view_stack);
+        main_box.append(&main_stack);
         toast_overlay.set_child(Some(&main_box));
         window.set_content(Some(&toast_overlay));
 
-        // File Chooser Dialog integration
+        // File Chooser Dialog integration for Dropzone
         let dropzone_file = dropzone_view.clone();
         let win_weak_file = window.downgrade();
         dropzone_view.connect_choose_file(move || {
             if let Some(win) = win_weak_file.upgrade() {
                 let dialog = gtk4::FileDialog::new();
-                dialog.set_title("Select Audio File");
+                dialog.set_title("Select Audio or Video File");
 
                 let filter = gtk4::FileFilter::new();
                 filter.set_name(Some(
-                    "Audio & Video Files (*.mp3, *.wav, *.m4a, *.mp4, *.mkv, *.mov, *.webm)",
+                    "Media Files (*.mp3, *.wav, *.m4a, *.mp4, *.mkv, *.mov, *.webm)",
                 ));
                 filter.add_mime_type("audio/*");
                 filter.add_mime_type("video/*");
@@ -140,39 +167,36 @@ impl MainWindow {
 
         // Connect Progress Cancel button
         let token_clone = current_cancel_token.clone();
+        let dubbing_stack_cancel = dubbing_stack.clone();
         progress_view.connect_cancel(move || {
             if let Some(ref token) = *token_clone.borrow() {
                 token.cancel();
             }
+            dubbing_stack_cancel.set_visible_child_name("dropzone");
         });
 
         // Connect "New Translation" button in ResultView
-        let stack_clone_new = view_stack.clone();
+        let dubbing_stack_new = dubbing_stack.clone();
         result_view.connect_new_clicked(move || {
-            stack_clone_new.set_visible_child_name("dropzone");
+            dubbing_stack_new.set_visible_child_name("dropzone");
         });
 
-        // Connect History Toggle and Back
-        let stack_clone_hist = view_stack.clone();
-        let hist_clone = history_view.clone();
-        let repo_clone_hist = job_repo.clone();
-        history_btn.connect_clicked(move |_| {
-            let current = stack_clone_hist.visible_child_name();
-            if current.as_deref() == Some("history") {
-                stack_clone_hist.set_visible_child_name("dropzone");
-            } else {
-                stack_clone_hist.set_visible_child_name("history");
-                let h = hist_clone.clone();
-                let r = repo_clone_hist.clone();
+        // Connect History Page Refresh and Back button
+        let hist_refresh = history_view.clone();
+        let repo_refresh = job_repo.clone();
+        main_stack.connect_visible_child_name_notify(move |stack| {
+            if stack.visible_child_name().as_deref() == Some("history") {
+                let h = hist_refresh.clone();
+                let r = repo_refresh.clone();
                 glib::spawn_future_local(async move {
                     h.refresh(r).await;
                 });
             }
         });
 
-        let stack_clone_hist_back = view_stack.clone();
+        let main_stack_hist_back = main_stack.clone();
         history_view.connect_back_clicked(move || {
-            stack_clone_hist_back.set_visible_child_name("dropzone");
+            main_stack_hist_back.set_visible_child_name("dubbing");
         });
 
         // Initial history load on startup
@@ -185,7 +209,7 @@ impl MainWindow {
         // Setup Communication Channel from Tokio to GTK
         let (sender, receiver) = async_channel::unbounded::<UiMessage>();
 
-        let stack_clone_msg = view_stack.clone();
+        let dubbing_stack_msg = dubbing_stack.clone();
         let progress_clone_msg = progress_view.clone();
         let result_clone_msg = result_view.clone();
         let toast_clone_msg = toast_overlay.clone();
@@ -200,7 +224,7 @@ impl MainWindow {
                     }
                     UiMessage::Success(artifact, src_lang, tgt_lang) => {
                         result_clone_msg.set_result(&artifact, &src_lang, &tgt_lang);
-                        stack_clone_msg.set_visible_child_name("result");
+                        dubbing_stack_msg.set_visible_child_name("result");
                         let toast = libadwaita::Toast::new("Translation finished successfully!");
                         toast_clone_msg.add_toast(toast);
                         let h = hist_succ.clone();
@@ -210,7 +234,7 @@ impl MainWindow {
                         });
                     }
                     UiMessage::Error(err) => {
-                        stack_clone_msg.set_visible_child_name("dropzone");
+                        dubbing_stack_msg.set_visible_child_name("dropzone");
                         let toast =
                             libadwaita::Toast::new(&format!("{}: {}", err.human_title(), err));
                         toast.set_timeout(6);
@@ -222,7 +246,7 @@ impl MainWindow {
 
         // Connect "Translate & Dub" clicked
         let dropzone_exec = dropzone_view.clone();
-        let stack_exec = view_stack.clone();
+        let dubbing_stack_exec = dubbing_stack.clone();
         let secret_store_exec = secret_store.clone();
         let audio_engine_exec = audio_engine.clone();
         let job_repo_exec = job_repo.clone();
@@ -270,8 +294,8 @@ impl MainWindow {
                 return;
             }
 
-            // Transition UI to progress screen
-            stack_exec.set_visible_child_name("progress");
+            // Transition dubbing view to progress screen
+            dubbing_stack_exec.set_visible_child_name("progress");
 
             let cancel_token = CancellationToken::new();
             *token_exec.borrow_mut() = Some(cancel_token.clone());
@@ -349,6 +373,170 @@ impl MainWindow {
                     }
                 }
             });
+        });
+
+        // Connect TTS Studio "Generate Speech" clicked
+        let tts_exec = tts_view.clone();
+        let secret_store_tts = secret_store.clone();
+        let settings_tts = settings.clone();
+        let toast_tts = toast_overlay.clone();
+        let win_weak_tts = window.downgrade();
+
+        tts_view.connect_generate_clicked(move || {
+            let api_key = match secret_store_tts.get_api_key() {
+                Ok(Some(k)) if !k.trim().is_empty() => k.trim().to_string(),
+                _ => {
+                    let toast =
+                        libadwaita::Toast::new("Please configure your Gemini API Key in Settings");
+                    toast_tts.add_toast(toast);
+                    if let Some(win) = win_weak_tts.upgrade() {
+                        SettingsDialog::show(&win, secret_store_tts.clone(), settings_tts.clone());
+                    }
+                    return;
+                }
+            };
+
+            let text = tts_exec.text().trim().to_string();
+            if text.is_empty() {
+                let toast = libadwaita::Toast::new("Please enter text to synthesize");
+                toast_tts.add_toast(toast);
+                return;
+            }
+
+            let voice_profile = tts_exec.build_voice_profile();
+            let style_instruction = tts_exec.selected_style_instruction();
+            let speed = tts_exec.selected_speed();
+
+            tts_exec.set_generating(true, "Synthesizing expressive speech with Gemini...");
+
+            let tts_ui = tts_exec.clone();
+            let toast_ui = toast_tts.clone();
+            let tts_model_name = settings_tts.models.tts.clone();
+
+            glib::spawn_future_local(async move {
+                let tts_dir = dirs::data_local_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("audiodub")
+                    .join("tts");
+                let _ = tokio::fs::create_dir_all(&tts_dir).await;
+
+                let filename = format!(
+                    "tts_{}_{}.wav",
+                    chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+                    &uuid::Uuid::new_v4().to_string()[..8]
+                );
+                let out_wav_path = tts_dir.join(&filename);
+
+                let client = GeminiClient::new(api_key);
+                let synth = GeminiSynthesizer::new(client, tts_model_name);
+
+                use crate::application::ports::SpeechSynthesizer;
+                let synth_res = synth
+                    .synthesize_text(
+                        &text,
+                        &voice_profile,
+                        style_instruction.as_deref(),
+                        &out_wav_path,
+                    )
+                    .await;
+
+                match synth_res {
+                    Ok(seg) => {
+                        let final_path = if (speed - 1.0).abs() > 0.05 {
+                            let stretched_filename = format!(
+                                "tts_{}_{}_speed.wav",
+                                chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+                                &uuid::Uuid::new_v4().to_string()[..8]
+                            );
+                            let stretched_path = tts_dir.join(&stretched_filename);
+                            let in_p = out_wav_path.clone();
+                            let out_p = stretched_path.clone();
+                            let stretch_res = tokio::task::spawn_blocking(move || {
+                                crate::infrastructure::ffmpeg::FfmpegAligner::time_stretch(
+                                    &in_p,
+                                    &out_p,
+                                    speed as f64,
+                                )
+                            })
+                            .await;
+
+                            match stretch_res {
+                                Ok(Ok(())) => stretched_path,
+                                _ => out_wav_path,
+                            }
+                        } else {
+                            out_wav_path
+                        };
+
+                        let p = final_path.clone();
+                        let duration_ms = match tokio::task::spawn_blocking(move || {
+                            crate::infrastructure::ffmpeg::FfprobeInspector::probe(&p)
+                        })
+                        .await
+                        {
+                            Ok(Ok(meta)) => meta.duration_ms,
+                            _ => seg.duration_ms,
+                        };
+
+                        tts_ui.set_generating(false, "Speech generated successfully!");
+                        tts_ui.set_result(final_path, duration_ms);
+                        let toast = libadwaita::Toast::new("Speech synthesis completed!");
+                        toast_ui.add_toast(toast);
+                    }
+                    Err(e) => {
+                        tts_ui.set_generating(false, "");
+                        let toast = libadwaita::Toast::new(&format!("TTS Error: {}", e));
+                        toast.set_timeout(6);
+                        toast_ui.add_toast(toast);
+                    }
+                }
+            });
+        });
+
+        // Connect TTS Studio "Export MP3..." clicked
+        let win_weak_export = window.downgrade();
+        let toast_export = toast_overlay.clone();
+        tts_view.connect_export_clicked(move |source_path| {
+            if let Some(win) = win_weak_export.upgrade() {
+                let dialog = gtk4::FileDialog::new();
+                dialog.set_title("Export Synthesized Audio");
+                dialog.set_initial_name(Some("synthesized_speech.mp3"));
+
+                let filter = gtk4::FileFilter::new();
+                filter.set_name(Some("Audio Files (*.mp3, *.wav)"));
+                filter.add_pattern("*.mp3");
+                filter.add_pattern("*.wav");
+                let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+
+                let toast_cb = toast_export.clone();
+                dialog.save(Some(&win), gtk4::gio::Cancellable::NONE, move |res| {
+                    if let Ok(file) = res {
+                        if let Some(dest_path) = file.path() {
+                            let src = source_path.clone();
+                            let dst = dest_path.clone();
+                            std::thread::spawn(move || {
+                                let _ = std::process::Command::new("ffmpeg")
+                                    .arg("-y")
+                                    .arg("-i")
+                                    .arg(&src)
+                                    .arg("-c:a")
+                                    .arg("libmp3lame")
+                                    .arg("-b:a")
+                                    .arg("192k")
+                                    .arg(&dst)
+                                    .output();
+                            });
+                            let toast = libadwaita::Toast::new(&format!(
+                                "Saved to: {}",
+                                dest_path.file_name().unwrap_or_default().to_string_lossy()
+                            ));
+                            toast_cb.add_toast(toast);
+                        }
+                    }
+                });
+            }
         });
 
         Self { window }

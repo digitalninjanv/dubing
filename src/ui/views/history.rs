@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct HistoryView {
-    container: gtk4::Box,
+    clamp: libadwaita::Clamp,
     list_box: gtk4::ListBox,
     back_btn: gtk4::Button,
 }
@@ -48,8 +48,14 @@ impl HistoryView {
 
         container.append(&scrolled);
 
+        let clamp = libadwaita::Clamp::new();
+        clamp.set_maximum_size(780);
+        clamp.set_tightening_threshold(580);
+        clamp.set_vexpand(true);
+        clamp.set_child(Some(&container));
+
         Self {
-            container,
+            clamp,
             list_box,
             back_btn,
         }
@@ -62,8 +68,8 @@ impl HistoryView {
         self.back_btn.connect_clicked(move |_| callback());
     }
 
-    pub fn widget(&self) -> &gtk4::Box {
-        &self.container
+    pub fn widget(&self) -> &libadwaita::Clamp {
+        &self.clamp
     }
 
     pub async fn refresh(&self, repo: Arc<dyn JobRepository>) {
