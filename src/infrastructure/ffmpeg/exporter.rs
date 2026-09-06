@@ -49,19 +49,14 @@ impl FfmpegExporter {
             .arg("-i")
             .arg(&concat_list_path);
 
-        // Strict Master Duration Synchronization:
-        // If target_duration_ms is provided, enforce exact 1:1 duration matching via apad and -t
+        // Master Duration Synchronization:
+        // If target_duration_ms is provided, pad silence up to minimum duration if audio is shorter.
+        // We use apad=whole_dur to guarantee speech is NEVER amputated or cut off mid-sentence.
         if let Some(target_ms) = target_duration_ms {
             if target_ms > 0 {
                 let duration_secs = (target_ms as f64) / 1000.0;
-                let filter = if target_ms > 100 {
-                    let fade_start = (target_ms as f64 - 50.0) / 1000.0;
-                    format!("apad,afade=t=out:st={:.3}:d=0.050", fade_start)
-                } else {
-                    "apad".to_string()
-                };
-                cmd.arg("-af").arg(filter);
-                cmd.arg("-t").arg(format!("{:.3}", duration_secs));
+                cmd.arg("-af")
+                    .arg(format!("apad=whole_dur={:.3}", duration_secs));
             }
         }
 

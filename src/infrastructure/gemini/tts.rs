@@ -97,17 +97,26 @@ impl SpeechSynthesizer for GeminiSynthesizer {
             self.client.api_key()
         );
 
+        let duration_hint = if segment.target_duration_ms() > 0 {
+            let sec = segment.target_duration_ms() as f64 / 1000.0;
+            format!("Pacing instruction: Speak briskly and clearly within approximately {:.1} seconds without unnatural pauses or dragging vowels.\n", sec)
+        } else {
+            String::new()
+        };
+
         let prompt = match &voice.style {
             Some(style) if !style.trim().is_empty() => {
                 format!(
-                    "Speaking style instructions: {}\n\nText to synthesize:\n{}",
+                    "Speaking style instructions: {}\n{}Text to synthesize:\n{}",
                     style.trim(),
+                    duration_hint,
                     segment.translated_text
                 )
             }
             _ => {
                 format!(
-                    "Synthesize the following speech naturally and clearly:\n\n{}",
+                    "Speaking style instructions: Professional audio dubbing. {}Text to synthesize:\n{}",
+                    duration_hint,
                     segment.translated_text
                 )
             }

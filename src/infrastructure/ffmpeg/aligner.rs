@@ -46,7 +46,7 @@ impl FfmpegAligner {
             .arg("-i")
             .arg(input_path)
             .arg("-af")
-            .arg("silenceremove=start_periods=1:start_duration=0.03:start_threshold=-40dB:stop_periods=1:stop_duration=0.03:stop_threshold=-40dB")
+            .arg("silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB")
             .arg(output_path)
             .output()
             .map_err(|e| {
@@ -82,8 +82,8 @@ impl FfmpegAligner {
         output_path: &Path,
         tempo: f64,
     ) -> Result<(), DomainError> {
-        // Clamp tempo between 0.75 and 1.35 for natural sounding speech without distortion
-        let clamped_tempo = tempo.clamp(0.75, 1.35);
+        // Clamp tempo between 0.75 and 1.50 for natural sounding speech without distortion
+        let clamped_tempo = tempo.clamp(0.75, 1.50);
         let output = Command::new("ffmpeg")
             .arg("-y")
             .arg("-i")
@@ -172,26 +172,27 @@ impl FfmpegAligner {
             let actual_metadata = FfprobeInspector::probe(&active_path)?;
             let actual_duration_ms = actual_metadata.duration_ms;
 
-            if target_slot_ms > 0 && actual_duration_ms > (target_slot_ms + 150) {
-                // Audio exceeds target slot by more than 150ms
+            if target_slot_ms > 0 && actual_duration_ms > (target_slot_ms + 80) {
+                // Audio exceeds target slot by more than 80ms
                 let ratio = (actual_duration_ms as f64) / (target_slot_ms as f64);
-                if ratio <= 1.35 {
-                    // Mild stretchable ratio
+                if ratio <= 1.50 {
+                    // Fit precisely into target slot so that 100% of the speech completes within the slot
                     let stretched_path = job_dir.join(format!("align_{:04}.wav", idx));
                     Self::time_stretch(&active_path, &stretched_path, ratio)?;
                     aligned_files.push(stretched_path);
                     current_timeline_ms += target_slot_ms;
                     continue;
                 } else {
-                    // Exceeds 1.35x: clamp to 1.35x and record warning
+                    // Exceeds 1.50x: compress at 1.50x to preserve intelligibility without cutting words
                     let stretched_path = job_dir.join(format!("align_{:04}.wav", idx));
-                    Self::time_stretch(&active_path, &stretched_path, 1.35)?;
+                    Self::time_stretch(&active_path, &stretched_path, 1.50)?;
                     aligned_files.push(stretched_path);
+                    let new_duration = (actual_duration_ms as f64 / 1.50).round() as u64;
                     quality_warnings.push(format!(
-                        "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.35x",
-                        synth_seg.segment_id, actual_duration_ms, target_slot_ms, ratio
+                        "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.50x (new duration: {}ms)",
+                        synth_seg.segment_id, actual_duration_ms, target_slot_ms, ratio, new_duration
                     ));
-                    current_timeline_ms += (actual_duration_ms as f64 / 1.35).round() as u64;
+                    current_timeline_ms += new_duration;
                     continue;
                 }
             }

@@ -69,15 +69,28 @@ impl GeminiTranslator {
             self.client.api_key()
         );
 
-        // Prepare segments JSON to provide to model
+        // Prepare segments JSON to provide to model with strict character budget
         let segments_json: Vec<serde_json::Value> = segments
             .iter()
             .map(|s| {
+                let duration_ms = s.duration_ms();
+                let duration_secs = (duration_ms as f64) / 1000.0;
+                let is_cjk = target_lang.as_str() == "ja"
+                    || target_lang.as_str() == "zh"
+                    || target_lang.as_str() == "ko";
+                // Estimate character budget: CJK ~6 chars/sec, Latin/other ~15 chars/sec
+                let max_character_limit = if is_cjk {
+                    ((duration_secs * 6.0).round() as usize).max(4)
+                } else {
+                    ((duration_secs * 15.0).round() as usize).max(10)
+                };
+
                 json!({
                     "segment_id": s.id,
                     "speaker": s.speaker_id,
                     "text": s.text,
-                    "duration_ms": s.duration_ms(),
+                    "duration_ms": duration_ms,
+                    "max_character_limit": max_character_limit,
                 })
             })
             .collect();
@@ -89,11 +102,11 @@ Translate the following spoken transcript from source language into target langu
 Style and Tone Guidance:
 {tone_instruction}
 
-Timing & Dubbing Rules:
-- IMPORTANT: Each segment has a strict time budget ('duration_ms').
-- Your translation MUST match the duration and cadence of the original speech.
-- Ensure the translated text can be spoken naturally within the specified duration_ms. Avoid wordy, verbose, or unnecessarily long phrasing.
-- If the target language naturally uses more syllables, adapt the translation to be concise and punchy without losing key meaning.
+Isochronous Dubbing Constraints & Timing Rules:
+- STRICT TIMING BUDGET: Each segment has a strict time budget ('duration_ms') and an explicit 'max_character_limit'.
+- Your translation MUST be speakable within 'duration_ms'. Do NOT exceed 'max_character_limit'.
+- Avoid wordy, overly formal, or verbose phrasing. Use concise, colloquial, and punchy wording that preserves the core message and emotional intent.
+- If the literal translation would be too long, condense sentences or use shorter synonyms so the voice actor can finish speaking naturally within the duration.
 - Preserve names, numbers, dates, and technical terminology accurately.
 - Maintain the exact same segment_id for each item.
 - Do not add explanations or meta text.
