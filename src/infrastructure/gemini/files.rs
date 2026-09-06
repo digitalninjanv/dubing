@@ -9,7 +9,7 @@ pub struct GeminiFileResponse {
     pub file: GeminiFileInfo,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GeminiFileInfo {
     pub name: String,
     pub uri: String,
@@ -17,6 +17,7 @@ pub struct GeminiFileInfo {
     pub mime_type: String,
     #[serde(rename = "sizeBytes")]
     pub size_bytes: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Clone)]
@@ -93,7 +94,51 @@ impl GeminiFilesApi {
             DomainError::PermanentApiError(format!("Failed to parse upload response: {}", e))
         })?;
 
-        Ok(parsed.file)
+        let file_info = parsed.file;
+        if file_info.state.as_deref() == Some("PROCESSING") {
+            self.wait_for_active(&file_info.name).await
+        } else {
+            Ok(file_info)
+        }
+    }
+
+    pub async fn wait_for_active(&self, file_name: &str) -> Result<GeminiFileInfo, DomainError> {
+        let url = format!(
+            "{}/v1beta/{}?key={}",
+            self.client.base_url(),
+            file_name,
+            self.client.api_key()
+        );
+
+        for _ in 0..15 {
+            let resp = self.client.http().get(&url).send().await;
+            if let Ok(response) = resp {
+                if response.status().is_success() {
+                    if let Ok(data) = response.json::<GeminiFileResponse>().await {
+                        if data.file.state.as_deref() == Some("ACTIVE") {
+                            return Ok(data.file);
+                        } else if data.file.state.as_deref() == Some("FAILED") {
+                            return Err(DomainError::PermanentApiError(
+                                "Uploaded audio processing failed on Google servers".to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        }
+
+        // Fallback: fetch final state or return
+        let final_resp = self.client.http().get(&url).send().await;
+        if let Ok(resp) = final_resp {
+            if let Ok(data) = resp.json::<GeminiFileResponse>().await {
+                return Ok(data.file);
+            }
+        }
+
+        Err(DomainError::TransientError(
+            "Timed out waiting for audio file processing on Gemini".to_string(),
+        ))
     }
 
     pub async fn delete_file(&self, file_name: &str) -> Result<(), DomainError> {
