@@ -10,8 +10,6 @@ pub struct ResultView {
     scroller: gtk4::ScrolledWindow,
     info_label: gtk4::Label,
     path_label: gtk4::Label,
-    warning_box: gtk4::Box,
-    warning_label: gtk4::Label,
     #[allow(dead_code)]
     play_btn: gtk4::Button,
     play_video_btn: gtk4::Button,
@@ -100,27 +98,8 @@ impl ResultView {
         path_box.append(&path_label);
         path_box.append(&copy_path_btn);
 
-        let warning_box = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-        warning_box.add_css_class("card");
-        warning_box.set_margin_top(6);
-        warning_box.set_visible(false);
-
-        let warning_title = gtk4::Label::new(Some("⚠ Quality Notice"));
-        warning_title.add_css_class("warning");
-        warning_title.set_halign(gtk4::Align::Start);
-
-        let warning_label = gtk4::Label::new(None);
-        warning_label.set_wrap(true);
-        warning_label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-        warning_label.set_halign(gtk4::Align::Start);
-        warning_label.add_css_class("dim-label");
-
-        warning_box.append(&warning_title);
-        warning_box.append(&warning_label);
-
         info_box.append(&info_label);
         info_box.append(&path_box);
-        info_box.append(&warning_box);
         info_frame.set_child(Some(&info_box));
         content_box.append(&info_frame);
 
@@ -252,8 +231,6 @@ impl ResultView {
             scroller,
             info_label,
             path_label,
-            warning_box,
-            warning_label,
             play_btn,
             play_video_btn,
             subtitles_row,
@@ -303,12 +280,8 @@ impl ResultView {
         self.path_label
             .set_text(&format!("Saved to: {}", artifact.path.display()));
 
-        if !artifact.quality_warnings.is_empty() {
-            self.warning_label
-                .set_text(&artifact.quality_warnings.join("\n"));
-            self.warning_box.set_visible(true);
-        } else {
-            self.warning_box.set_visible(false);
+        for warning in &artifact.quality_warnings {
+            tracing::info!("Audio alignment diagnostic: {}", warning);
         }
     }
 
