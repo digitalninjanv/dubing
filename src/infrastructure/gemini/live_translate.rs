@@ -107,19 +107,19 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // 1. Send Setup Message
+        // 1. Send Setup Message (Official Google Live Translate configuration)
         let setup_msg = serde_json::json!({
             "setup": {
                 "model": format!("models/{}", self.model_name),
                 "generationConfig": {
                     "responseModalities": ["AUDIO"],
+                    "inputAudioTranscription": {},
+                    "outputAudioTranscription": {},
                     "translationConfig": {
                         "targetLanguageCode": target_lang.as_str(),
                         "echoTargetLanguage": true
                     }
-                },
-                "inputAudioTranscription": {},
-                "outputAudioTranscription": {}
+                }
             }
         });
 
@@ -130,58 +130,7 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                 DomainError::TransientError(format!("Failed to send setup message: {}", e))
             })?;
 
-        debug!("Gemini Live Translate setup message delivered. Awaiting setupComplete...");
-
-        // Handshake: wait for setupComplete from Gemini Live server before streaming audio
-        let mut setup_done = false;
-        while let Some(msg_res) = ws_receiver.next().await {
-            if cancel_token.is_cancelled() {
-                let _ = ws_sender.close().await;
-                return Err(DomainError::Cancelled);
-            }
-
-            let msg = msg_res.map_err(|e| {
-                DomainError::TransientError(format!("WebSocket receive error during setup: {}", e))
-            })?;
-
-            match msg {
-                Message::Text(text) => {
-                    if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
-                        if let Some(err) = parsed.get("error") {
-                            let err_msg = err
-                                .get("message")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("Unknown error during setup");
-                            return Err(DomainError::PermanentApiError(format!(
-                                "Gemini Live API setup error: {}",
-                                err_msg
-                            )));
-                        }
-                        if parsed.get("setupComplete").is_some() {
-                            info!("Gemini Live Translate session established (setupComplete confirmed)");
-                            setup_done = true;
-                            break;
-                        }
-                    }
-                }
-                Message::Ping(p) => {
-                    let _ = ws_sender.send(Message::Pong(p)).await;
-                }
-                Message::Close(reason) => {
-                    return Err(DomainError::PermanentApiError(format!(
-                        "WebSocket closed during session setup: {:?}",
-                        reason
-                    )));
-                }
-                _ => {}
-            }
-        }
-
-        if !setup_done {
-            return Err(DomainError::TransientError(
-                "Gemini Live API connection closed before setupComplete".to_string(),
-            ));
-        }
+        debug!("Gemini Live Translate setup message delivered. Beginning continuous audio streaming...");
 
         let mut output_file = File::create(&output_pcm_path).map_err(|e| {
             DomainError::Internal(format!("Failed to create output PCM file: {}", e))
@@ -232,12 +181,10 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&raw_chunk);
                             let audio_msg = serde_json::json!({
                                 "realtimeInput": {
-                                    "mediaChunks": [
-                                        {
-                                            "mimeType": "audio/pcm;rate=16000",
-                                            "data": b64
-                                        }
-                                    ]
+                                    "audio": {
+                                        "data": b64,
+                                        "mimeType": "audio/pcm;rate=16000"
+                                    }
                                 }
                             });
                             if let Err(e) = ws_sender.send(Message::Text(audio_msg.to_string())).await {
@@ -251,19 +198,7 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                         }
                         Some(None) | None => {
                             sender_done = true;
-                            debug!("Audio streaming finished ({} chunks sent). Signaling client turn complete.", chunks_sent);
-                            let end_turn_msg = serde_json::json!({
-                                "clientContent": {
-                                    "turns": [
-                                        {
-                                            "role": "user",
-                                            "parts": []
-                                        }
-                                    ],
-                                    "turnComplete": true
-                                }
-                            });
-                            let _ = ws_sender.send(Message::Text(end_turn_msg.to_string())).await;
+                            debug!("Audio streaming finished ({} chunks sent). Waiting for translated audio drain window...", chunks_sent);
                         }
                     }
                 }
@@ -356,8 +291,8 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                     }
                 }
 
-                // Inactivity timeout: 12 seconds after sender completes
-                _ = tokio::time::sleep(Duration::from_secs(12)), if sender_done => {
+                // Drain timeout: 7 seconds after sender completes
+                _ = tokio::time::sleep(Duration::from_secs(7)), if sender_done => {
                     info!("Live Translate receive window completed after sender finished");
                     turn_completed = true;
                 }
