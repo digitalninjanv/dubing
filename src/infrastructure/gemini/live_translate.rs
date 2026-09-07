@@ -112,13 +112,11 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
             "setup": {
                 "model": format!("models/{}", self.model_name),
                 "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "inputAudioTranscription": {},
-                    "outputAudioTranscription": {},
-                    "translationConfig": {
-                        "targetLanguageCode": target_lang.as_str(),
-                        "echoTargetLanguage": true
-                    }
+                    "responseModalities": ["AUDIO"]
+                },
+                "translationConfig": {
+                    "targetLanguageCode": target_lang.as_str(),
+                    "echoTargetLanguage": true
                 }
             }
         });
@@ -130,7 +128,58 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                 DomainError::TransientError(format!("Failed to send setup message: {}", e))
             })?;
 
-        debug!("Gemini Live Translate setup message delivered");
+        debug!("Gemini Live Translate setup message delivered. Awaiting setupComplete...");
+
+        // Handshake: wait for setupComplete from Gemini Live server before streaming audio
+        let mut setup_done = false;
+        while let Some(msg_res) = ws_receiver.next().await {
+            if cancel_token.is_cancelled() {
+                let _ = ws_sender.close().await;
+                return Err(DomainError::Cancelled);
+            }
+
+            let msg = msg_res.map_err(|e| {
+                DomainError::TransientError(format!("WebSocket receive error during setup: {}", e))
+            })?;
+
+            match msg {
+                Message::Text(text) => {
+                    if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                        if let Some(err) = parsed.get("error") {
+                            let err_msg = err
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Unknown error during setup");
+                            return Err(DomainError::PermanentApiError(format!(
+                                "Gemini Live API setup error: {}",
+                                err_msg
+                            )));
+                        }
+                        if parsed.get("setupComplete").is_some() {
+                            info!("Gemini Live Translate session established (setupComplete confirmed)");
+                            setup_done = true;
+                            break;
+                        }
+                    }
+                }
+                Message::Ping(p) => {
+                    let _ = ws_sender.send(Message::Pong(p)).await;
+                }
+                Message::Close(reason) => {
+                    return Err(DomainError::PermanentApiError(format!(
+                        "WebSocket closed during session setup: {:?}",
+                        reason
+                    )));
+                }
+                _ => {}
+            }
+        }
+
+        if !setup_done {
+            return Err(DomainError::TransientError(
+                "Gemini Live API connection closed before setupComplete".to_string(),
+            ));
+        }
 
         let mut output_file = File::create(&output_pcm_path).map_err(|e| {
             DomainError::Internal(format!("Failed to create output PCM file: {}", e))
@@ -144,7 +193,7 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
         let chunks: Vec<Vec<u8>> = pcm_bytes.chunks(CHUNK_SIZE).map(|c| c.to_vec()).collect();
         let total_chunks = chunks.len();
 
-        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel::<Option<Vec<u8>>>(16);
+        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel::<Option<Vec<u8>>>(32);
 
         // Spawn sender streamer
         let cancel_sender = cancel_token.clone();
@@ -156,8 +205,8 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                 if chunk_tx.send(Some(chunk)).await.is_err() {
                     break;
                 }
-                // Gentle throttle: 60ms pacing between 100ms chunks to deliver smoothly
-                tokio::time::sleep(Duration::from_millis(60)).await;
+                // Deliver smoothly at 40ms pacing between 100ms chunks
+                tokio::time::sleep(Duration::from_millis(40)).await;
             }
             let _ = chunk_tx.send(None).await;
         });
@@ -181,10 +230,12 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&raw_chunk);
                             let audio_msg = serde_json::json!({
                                 "realtimeInput": {
-                                    "audio": {
-                                        "data": b64,
-                                        "mimeType": "audio/pcm;rate=16000"
-                                    }
+                                    "mediaChunks": [
+                                        {
+                                            "mimeType": "audio/pcm;rate=16000",
+                                            "data": b64
+                                        }
+                                    ]
                                 }
                             });
                             if let Err(e) = ws_sender.send(Message::Text(audio_msg.to_string())).await {
@@ -192,7 +243,7 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                                 break;
                             }
                             chunks_sent += 1;
-                            if chunks_sent % 20 == 0 || chunks_sent == total_chunks {
+                            if chunks_sent % 25 == 0 || chunks_sent == total_chunks {
                                 debug!("Live Translate streamed {}/{} chunks ({:.1}%)", chunks_sent, total_chunks, (chunks_sent as f32 / total_chunks as f32) * 100.0);
                             }
                         }
@@ -239,9 +290,15 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                                             for part in parts {
                                                 if let Some(inline_data) = part.get("inlineData") {
                                                     if let Some(b64_audio) = inline_data.get("data").and_then(|d| d.as_str()) {
-                                                        if let Ok(audio_bytes) = base64::engine::general_purpose::STANDARD.decode(b64_audio) {
+                                                        if let Ok(audio_bytes) = base64::engine::general_purpose::STANDARD.decode(b64_audio.trim()) {
                                                             let _ = output_file.write_all(&audio_bytes);
                                                         }
+                                                    }
+                                                }
+                                                if let Some(txt) = part.get("text").and_then(|s| s.as_str()) {
+                                                    let trimmed = txt.trim();
+                                                    if !trimmed.is_empty() && !output_transcripts.iter().any(|t| t == trimmed) {
+                                                        output_transcripts.push(trimmed.to_string());
                                                     }
                                                 }
                                             }
@@ -277,6 +334,9 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                         Some(Ok(Message::Binary(bin))) => {
                             // Direct binary PCM payload if emitted in raw mode
                             let _ = output_file.write_all(&bin);
+                        }
+                        Some(Ok(Message::Ping(p))) => {
+                            let _ = ws_sender.send(Message::Pong(p)).await;
                         }
                         Some(Ok(Message::Close(reason))) => {
                             debug!("WebSocket closed by server: {:?}", reason);

@@ -246,47 +246,8 @@ impl SpeechSynthesizer for GeminiSynthesizer {
         voice: &VoiceProfile,
         output_path: &Path,
     ) -> Result<SynthesizedSegment, DomainError> {
-        let mut candidate_models = vec![self.model_name.as_str()];
-        // Official active 2026 Google Gemini TTS models
-        let fallbacks = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
-        for fb in fallbacks {
-            if !candidate_models.contains(&fb) {
-                candidate_models.push(fb);
-            }
-        }
-
-        let mut last_error = None;
-        for (attempt, &model) in candidate_models.iter().enumerate() {
-            if attempt > 0 {
-                tracing::info!(
-                    "Multi-model TTS fallback: switching to model '{}' for segment {}",
-                    model,
-                    segment.segment_id
-                );
-            }
-
-            match self.try_synthesize_with_model(model, segment, voice, output_path).await {
-                Ok(res) => return Ok(res),
-                Err(e) => {
-                    if e.is_retryable() {
-                        tracing::warn!(
-                            "TTS model '{}' failed with retryable rate limit/service error ({}). Cascading to next candidate model...",
-                            model,
-                            e
-                        );
-                        last_error = Some(e);
-                        continue;
-                    } else {
-                        // Non-retryable permanent error (e.g. auth failed)
-                        return Err(e);
-                    }
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| {
-            DomainError::TransientError("All candidate TTS models exhausted".to_string())
-        }))
+        self.try_synthesize_with_model(&self.model_name, segment, voice, output_path)
+            .await
     }
 
     async fn synthesize_text(

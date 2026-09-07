@@ -25,7 +25,7 @@ impl GeminiClient {
                 .unwrap_or_default(),
             api_key: api_key.into(),
             base_url: "https://generativelanguage.googleapis.com".to_string(),
-            backoffs: vec![2, 5, 10, 20],
+            backoffs: vec![1, 2, 4],
         }
     }
 
@@ -85,18 +85,18 @@ impl GeminiClient {
                             .unwrap_or(0);
 
                         let base_delay = if retry_after_secs > 0 {
-                            retry_after_secs.max(*delay_secs)
+                            retry_after_secs.min(5).max(*delay_secs)
                         } else {
                             *delay_secs
                         };
 
-                        // Add random jitter (250ms - 1250ms) to eliminate thundering herd / retry stampedes
+                        // Add small jitter (100ms - 500ms) to eliminate thundering herd / retry stampedes
                         let jitter_ms = (std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .subsec_nanos() as u64
-                            % 1000)
-                            + 250;
+                            % 400)
+                            + 100;
                         let sleep_duration = Duration::from_millis(base_delay * 1000 + jitter_ms);
 
                         warn!(
