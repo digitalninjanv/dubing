@@ -9,6 +9,7 @@ use serde_json::json;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use tracing::{info, warn};
 
 #[derive(Debug, Deserialize)]
 struct TtsCandidatePart {
@@ -246,8 +247,44 @@ impl SpeechSynthesizer for GeminiSynthesizer {
         voice: &VoiceProfile,
         output_path: &Path,
     ) -> Result<SynthesizedSegment, DomainError> {
-        self.try_synthesize_with_model(&self.model_name, segment, voice, output_path)
-            .await
+        let mut candidates = vec![self.model_name.as_str()];
+        let fallbacks = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
+        for fb in fallbacks {
+            if !candidates.contains(&fb) {
+                candidates.push(fb);
+            }
+        }
+
+        let mut last_err = None;
+        for (i, &model) in candidates.iter().enumerate() {
+            if i > 0 {
+                info!(
+                    "Fallback cascade: attempting TTS speech synthesis with model '{}'",
+                    model
+                );
+                if let Some(cb) = self.client.status_callback() {
+                    cb(&format!("Fallback to TTS model '{}'...", model));
+                }
+            }
+
+            match self
+                .try_synthesize_with_model(model, segment, voice, output_path)
+                .await
+            {
+                Ok(res) => return Ok(res),
+                Err(err) => {
+                    warn!("TTS synthesis failed with model '{}': {}", model, err);
+                    if matches!(err, DomainError::Cancelled | DomainError::AuthenticationFailed) {
+                        return Err(err);
+                    }
+                    last_err = Some(err);
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            DomainError::PermanentApiError("All TTS model candidates failed".to_string())
+        }))
     }
 
     async fn synthesize_text(

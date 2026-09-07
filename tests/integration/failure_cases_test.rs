@@ -356,3 +356,81 @@ async fn test_gemini_client_retry_status_callback() {
     assert!(msgs[0].contains("429") || msgs[0].contains("rate limit"), "Message should mention 429/rate limit");
 }
 
+#[tokio::test]
+async fn test_gemini_synthesizer_fallback_to_25_flash_tts() {
+    use audiodub::application::ports::SpeechSynthesizer;
+    use audiodub::domain::{TranslationSegment, VoiceProfile};
+    use audiodub::infrastructure::gemini::GeminiSynthesizer;
+    use base64::Engine;
+
+    let server = MockServer::start().await;
+
+    // 1. Primary model fails (404)
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-3.1-flash-tts-preview:generateContent"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("{\"error\": \"Model not found\"}"))
+        .mount(&server)
+        .await;
+
+    // Minimal 1 second silent WAV data
+    let dummy_pcm = vec![0u8; 48000]; // 1 sec of silence at 24kHz mono
+    let dummy_wav_base64 = base64::engine::general_purpose::STANDARD.encode(&dummy_pcm);
+    let tts_response = serde_json::json!({
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": "audio/wav",
+                                "data": dummy_wav_base64
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    });
+
+    // 2. Fallback model succeeds (200)
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&tts_response))
+        .mount(&server)
+        .await;
+
+    let client = GeminiClient::new("test-key")
+        .with_base_url(server.uri())
+        .with_backoffs(vec![0]);
+
+    let synth = GeminiSynthesizer::new(client, "gemini-3.1-flash-tts-preview");
+    let temp_dir = tempdir().unwrap();
+    let out_file = temp_dir.path().join("fallback_test.wav");
+
+    let voice = VoiceProfile {
+        id: "puck".to_string(),
+        voice_name: "Puck".to_string(),
+        language: "en".to_string(),
+        style: None,
+        speed: 1.0,
+    };
+
+    let seg = TranslationSegment {
+        segment_id: "seg-1".to_string(),
+        speaker_id: None,
+        source_start_ms: 0,
+        source_end_ms: 1000,
+        source_text: "Hello".to_string(),
+        translated_text: "Hello".to_string(),
+    };
+
+    let res = synth.synthesize_segment(&seg, &voice, &out_file).await;
+    assert!(
+        res.is_ok(),
+        "Fallback to gemini-2.5-flash-preview-tts should succeed: {:?}",
+        res.err()
+    );
+    assert!(out_file.exists());
+}
+
+
