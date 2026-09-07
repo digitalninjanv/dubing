@@ -11,7 +11,7 @@ pub mod translation;
 pub use audio::{AudioDocument, AudioFormat, MediaMetadata};
 pub use batch::{BatchItem, BatchItemStatus, BatchJob};
 pub use errors::DomainError;
-pub use job::{Job, JobId, JobProgress, PipelineStage};
+pub use job::{DubbingEngine, Job, JobId, JobProgress, PipelineStage};
 pub use language::{LanguageId, LanguageInfo, LanguageRegistry};
 pub use subtitle::{
     format_timestamp_srt, format_timestamp_vtt, generate_bilingual_txt, generate_srt, generate_vtt,

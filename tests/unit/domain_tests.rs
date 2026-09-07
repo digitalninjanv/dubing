@@ -290,3 +290,16 @@ fn test_tts_style_preset_and_request() {
 
     assert!(req.effective_style_instruction().contains("energy"));
 }
+
+#[test]
+fn test_dubbing_engine_variants_and_display() {
+    use audiodub::domain::DubbingEngine;
+
+    let studio = DubbingEngine::Studio;
+    assert_eq!(studio.as_str(), "studio");
+    assert_eq!(DubbingEngine::default(), DubbingEngine::Studio);
+    let live = DubbingEngine::LiveTranslate;
+    assert_eq!(live.as_str(), "live");
+    assert!(format!("{}", live).contains("Live Fast Translate"));
+}
+

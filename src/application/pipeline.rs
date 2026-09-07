@@ -1,11 +1,12 @@
 use super::ports::{
-    AudioEngine, JobRepository, SpeechSynthesizer, SpeechTranscriber, TextTranslator,
+    AudioEngine, JobRepository, LiveSpeechTranslator, SpeechSynthesizer, SpeechTranscriber,
+    TextTranslator,
 };
 use crate::config::{AppSettings, AudioConfig};
 use crate::domain::{
     generate_bilingual_txt, generate_srt, generate_vtt, AudioArtifact, AudioFormat, DomainError,
-    Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment, TranslationTone,
-    VoiceProfile,
+    DubbingEngine, Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment,
+    TranslationTone, VoiceProfile,
 };
 use crate::infrastructure::filesystem::{AppPaths, CleanupManager};
 use futures::stream::{self, StreamExt};
@@ -19,12 +20,14 @@ pub struct PipelineOptions {
     pub tone: TranslationTone,
     pub voice_config: Option<SpeakerVoiceConfig>,
     pub export_subtitles: bool,
+    pub engine: DubbingEngine,
 }
 
 pub struct PipelineOrchestrator {
     transcriber: Arc<dyn SpeechTranscriber>,
     translator: Arc<dyn TextTranslator>,
     synthesizer: Arc<dyn SpeechSynthesizer>,
+    live_translator: Option<Arc<dyn LiveSpeechTranslator>>,
     audio_engine: Arc<dyn AudioEngine>,
     job_repo: Arc<dyn JobRepository>,
     audio_config: AudioConfig,
@@ -45,12 +48,18 @@ impl PipelineOrchestrator {
             transcriber,
             translator,
             synthesizer,
+            live_translator: None,
             audio_engine,
             job_repo,
             audio_config,
             auto_cleanup: true,
             debug_mode: false,
         }
+    }
+
+    pub fn with_live_translator(mut self, live_translator: Arc<dyn LiveSpeechTranslator>) -> Self {
+        self.live_translator = Some(live_translator);
+        self
     }
 
     pub fn with_settings(
@@ -65,6 +74,7 @@ impl PipelineOrchestrator {
             transcriber,
             translator,
             synthesizer,
+            live_translator: None,
             audio_engine,
             job_repo,
             audio_config: settings.audio.clone(),
@@ -98,6 +108,18 @@ impl PipelineOrchestrator {
     where
         F: Fn(&Job) + Send + Sync + 'static,
     {
+        if options.engine == DubbingEngine::LiveTranslate {
+            if let Some(ref live_trans) = self.live_translator {
+                return self
+                    .run_live_translate_job(job, options, live_trans, cancel_token, on_progress)
+                    .await;
+            } else {
+                tracing::warn!(
+                    "Live Translate engine requested but not configured on orchestrator, falling back to Studio pipeline"
+                );
+            }
+        }
+
         let total_pipeline_timer = Instant::now();
         let job_dir = AppPaths::job_dir(job.id.as_str());
         std::fs::create_dir_all(&job_dir)
@@ -585,6 +607,275 @@ impl PipelineOrchestrator {
             translated.segments.len(),
             t_align.as_secs_f64(),
             t_export.as_secs_f64()
+        );
+
+        Ok(artifact)
+    }
+
+    /// Executes speech-to-speech translation using the real-time Gemini Live API (gemini-3.5-live-translate-preview).
+    /// Streams audio via WebSocket and re-encodes the 24kHz raw PCM output into a final MP3/WAV file.
+    async fn run_live_translate_job<F>(
+        &self,
+        mut job: Job,
+        _options: PipelineOptions,
+        live_translator: &Arc<dyn LiveSpeechTranslator>,
+        cancel_token: CancellationToken,
+        on_progress: F,
+    ) -> Result<AudioArtifact, DomainError>
+    where
+        F: Fn(&Job) + Send + Sync + 'static,
+    {
+        let total_timer = Instant::now();
+        let job_dir = AppPaths::job_dir(job.id.as_str());
+        std::fs::create_dir_all(&job_dir)
+            .map_err(|e| DomainError::Internal(format!("Failed to create job dir: {}", e)))?;
+
+        let auto_cleanup = self.auto_cleanup;
+        let debug_mode = self.debug_mode;
+        let job_dir_cancel = job_dir.clone();
+
+        let update_stage =
+            |job: &mut Job, stage: PipelineStage, msg: &str| -> Result<(), DomainError> {
+                if cancel_token.is_cancelled() {
+                    job.cancel();
+                    if auto_cleanup && !debug_mode {
+                        CleanupManager::cleanup_temp_segments(&job_dir_cancel);
+                    }
+                    return Err(DomainError::Cancelled);
+                }
+                job.transition_to(stage).map_err(DomainError::Internal)?;
+                job.progress.message = msg.to_string();
+                Ok(())
+            };
+
+        // 1. Validation Stage
+        update_stage(
+            &mut job,
+            PipelineStage::Validating,
+            "Validating audio input for Live Translate...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        // 2. Uploading / Session Setup Stage
+        update_stage(
+            &mut job,
+            PipelineStage::Uploading,
+            "Connecting to Gemini 3.5 Live Translate WebSocket...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        // 3. Transcribing / Streaming Stage
+        update_stage(
+            &mut job,
+            PipelineStage::Transcribing,
+            "Streaming 16kHz audio chunks to Gemini Live API...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        // 4. Translating & Synthesizing in Real-Time
+        update_stage(
+            &mut job,
+            PipelineStage::Translating,
+            "Translating and synthesizing speech in real-time...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        let live_res = match live_translator
+            .translate_speech(
+                &job.source_audio.path,
+                &job.target_language,
+                &job_dir,
+                &cancel_token,
+            )
+            .await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                let is_retryable = e.is_retryable();
+                job.fail(is_retryable, e.to_string());
+                let _ = self.job_repo.save(&job).await;
+                on_progress(&job);
+                return Err(e);
+            }
+        };
+
+        // 5. Synthesis Complete
+        update_stage(
+            &mut job,
+            PipelineStage::Synthesizing,
+            "Receiving synthesized 24kHz audio stream...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        // 6. Aligning Stage
+        update_stage(
+            &mut job,
+            PipelineStage::Aligning,
+            "Finalizing audio stream alignment...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        // 7. Exporting Stage: encode raw 24kHz PCM to MP3 / WAV
+        update_stage(
+            &mut job,
+            PipelineStage::Exporting,
+            "Encoding high-fidelity output MP3 with FFmpeg...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        let output_extension = if self.audio_config.export_wav { "wav" } else { "mp3" };
+        let output_audio_path = job_dir.join(format!("dubbed_output.{}", output_extension));
+        let bitrate_str = format!("{}k", self.audio_config.default_bitrate_kbps);
+
+        let mut ffmpeg_cmd = std::process::Command::new("ffmpeg");
+        ffmpeg_cmd.args([
+            "-y",
+            "-f",
+            "s16le",
+            "-ar",
+            "24000",
+            "-ac",
+            "1",
+            "-i",
+            live_res.raw_pcm_path.to_str().unwrap_or_default(),
+        ]);
+
+        if self.audio_config.export_wav {
+            ffmpeg_cmd.args(["-c:a", "pcm_s16le"]);
+        } else {
+            ffmpeg_cmd.args(["-c:a", "libmp3lame", "-b:a", &bitrate_str]);
+        }
+
+        ffmpeg_cmd.arg(output_audio_path.to_str().unwrap_or_default());
+
+        let export_status = ffmpeg_cmd.output().map_err(|e| {
+            DomainError::Internal(format!("Failed to execute FFmpeg for export: {}", e))
+        })?;
+
+        if !export_status.status.success() {
+            let err = DomainError::Internal(format!(
+                "FFmpeg audio encoding failed: {}",
+                String::from_utf8_lossy(&export_status.stderr)
+            ));
+            job.fail(false, err.to_string());
+            let _ = self.job_repo.save(&job).await;
+            on_progress(&job);
+            return Err(err);
+        }
+
+        // Multiplex with video if original file is video
+        let mut dubbed_video_path = None;
+        if job.source_audio.format.is_video() {
+            let video_output = job_dir.join("dubbed_video.mp4");
+            let mux_status = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-i",
+                    job.source_audio.path.to_str().unwrap_or_default(),
+                    "-i",
+                    output_audio_path.to_str().unwrap_or_default(),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "1:a:0",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    video_output.to_str().unwrap_or_default(),
+                ])
+                .output();
+
+            if let Ok(res) = mux_status {
+                if res.status.success() && video_output.exists() {
+                    dubbed_video_path = Some(video_output);
+                }
+            }
+        }
+
+        // Save bilingual script if transcripts were emitted
+        let mut transcript_txt_path = None;
+        if !live_res.output_transcripts.is_empty() || !live_res.input_transcripts.is_empty() {
+            let txt_path = job_dir.join("bilingual_script.txt");
+            let mut script_content = String::new();
+            script_content.push_str(&format!(
+                "# AudioDub AI — Gemini 3.5 Live Speech Translation\n# Source: {} | Target: {}\n\n",
+                job.source_language.as_str(),
+                job.target_language.as_str()
+            ));
+
+            let max_lines = live_res.input_transcripts.len().max(live_res.output_transcripts.len());
+            for i in 0..max_lines {
+                let orig = live_res.input_transcripts.get(i).map(|s| s.as_str()).unwrap_or("");
+                let trans = live_res.output_transcripts.get(i).map(|s| s.as_str()).unwrap_or("");
+                if !orig.is_empty() {
+                    script_content.push_str(&format!("[{}] {}\n", job.source_language.as_str(), orig));
+                }
+                if !trans.is_empty() {
+                    script_content.push_str(&format!("[{}] {}\n\n", job.target_language.as_str(), trans));
+                }
+            }
+
+            if std::fs::write(&txt_path, script_content).is_ok() {
+                transcript_txt_path = Some(txt_path);
+            }
+        }
+
+        // 8. Validating Output Stage
+        update_stage(
+            &mut job,
+            PipelineStage::ValidatingOutput,
+            "Validating final audio output...",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        let inspected_output = self
+            .audio_engine
+            .inspect_and_validate(&output_audio_path, self.audio_config.max_file_size_bytes)
+            .await?;
+
+        let artifact = AudioArtifact {
+            path: output_audio_path,
+            format: if self.audio_config.export_wav {
+                AudioFormat::Wav
+            } else {
+                AudioFormat::Mp3
+            },
+            duration_ms: inspected_output.metadata.duration_ms,
+            size_bytes: inspected_output.size_bytes,
+            quality_warnings: vec![],
+            subtitle_srt_path: None,
+            subtitle_vtt_path: None,
+            transcript_txt_path,
+            video_path: dubbed_video_path,
+        };
+
+        // 9. Completed Stage
+        update_stage(
+            &mut job,
+            PipelineStage::Completed,
+            "Live Speech Translation completed successfully!",
+        )?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
+
+        if auto_cleanup && !debug_mode {
+            CleanupManager::cleanup_temp_segments(&job_dir);
+        }
+
+        tracing::info!(
+            "Gemini Live Translate finished for Job {} in {:.2}s",
+            job.id.as_str(),
+            total_timer.elapsed().as_secs_f64()
         );
 
         Ok(artifact)

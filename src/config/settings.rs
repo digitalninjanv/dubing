@@ -1,3 +1,4 @@
+use crate::domain::DubbingEngine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5,6 +6,7 @@ pub struct ModelsConfig {
     pub transcriber: String,
     pub translator: String,
     pub tts: String,
+    pub live_translate: String,
 }
 
 impl Default for ModelsConfig {
@@ -13,6 +15,7 @@ impl Default for ModelsConfig {
             transcriber: "gemini-3.5-transcribe".to_string(),
             translator: "gemini-3.1-flash-lite".to_string(),
             tts: "gemini-3.1-flash-tts-preview".to_string(),
+            live_translate: "gemini-3.5-live-translate-preview".to_string(),
         }
     }
 }
@@ -38,6 +41,7 @@ impl Default for AudioConfig {
 pub struct AppSettings {
     pub models: ModelsConfig,
     pub audio: AudioConfig,
+    pub default_engine: DubbingEngine,
     pub auto_cleanup: bool,
     pub debug_mode: bool,
 }
@@ -47,6 +51,7 @@ impl Default for AppSettings {
         Self {
             models: ModelsConfig::default(),
             audio: AudioConfig::default(),
+            default_engine: DubbingEngine::default(),
             auto_cleanup: true,
             debug_mode: false,
         }

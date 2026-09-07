@@ -29,6 +29,31 @@ impl std::fmt::Display for JobId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum DubbingEngine {
+    #[default]
+    Studio,
+    LiveTranslate,
+}
+
+impl DubbingEngine {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Studio => "studio",
+            Self::LiveTranslate => "live",
+        }
+    }
+}
+
+impl std::fmt::Display for DubbingEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Studio => write!(f, "Studio Multi-Stage"),
+            Self::LiveTranslate => write!(f, "Live Fast Translate (gemini-3.5-live-translate-preview)"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PipelineStage {
     Idle,

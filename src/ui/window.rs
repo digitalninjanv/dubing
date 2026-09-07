@@ -6,7 +6,7 @@ use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
 use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
 use crate::infrastructure::gemini::{
-    GeminiClient, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
+    GeminiClient, GeminiLiveTranslator, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
 };
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
@@ -287,6 +287,7 @@ impl MainWindow {
             let tgt_lang = dropzone_exec.selected_target_language();
             let tone = dropzone_exec.selected_tone();
             let voice_config = dropzone_exec.selected_voice_config();
+            let engine = dropzone_exec.selected_engine();
 
             if let Err(err_msg) = registry_exec.validate_pair(&src_lang, &tgt_lang) {
                 let toast = libadwaita::Toast::new(&err_msg);
@@ -309,6 +310,7 @@ impl MainWindow {
                 tone,
                 voice_config,
                 export_subtitles: true,
+                engine,
             };
 
             // Spawn asynchronous job execution in Tokio background thread
@@ -336,8 +338,12 @@ impl MainWindow {
                     settings_bg.models.translator.clone(),
                 ));
                 let synthesizer = Arc::new(GeminiSynthesizer::new(
-                    gemini_client,
+                    gemini_client.clone(),
                     settings_bg.models.tts.clone(),
+                ));
+                let live_translator = Arc::new(GeminiLiveTranslator::new(
+                    gemini_client,
+                    settings_bg.models.live_translate.clone(),
                 ));
 
                 let orchestrator = PipelineOrchestrator::with_settings(
@@ -347,7 +353,8 @@ impl MainWindow {
                     audio_engine_bg,
                     job_repo_bg,
                     &settings_bg,
-                );
+                )
+                .with_live_translator(live_translator);
 
                 let sender_progress = sender_clone.clone();
                 let on_progress = move |updated_job: &Job| {

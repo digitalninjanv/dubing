@@ -3,13 +3,13 @@ use audiodub::application::ports::{AudioEngine, SecretStore, SpeechSynthesizer};
 use audiodub::application::{PipelineOptions, PipelineOrchestrator};
 use audiodub::config::AppSettings;
 use audiodub::domain::{
-    BatchItemStatus, BatchJob, LanguageId, LanguageRegistry, SpeakerVoiceConfig, TranslationTone,
-    VoiceProfile,
+    BatchItemStatus, BatchJob, DubbingEngine, LanguageId, LanguageRegistry, SpeakerVoiceConfig,
+    TranslationTone, VoiceProfile,
 };
 use audiodub::infrastructure::ffmpeg::FfmpegAudioEngine;
 use audiodub::infrastructure::filesystem::FileJobRepository;
 use audiodub::infrastructure::gemini::{
-    GeminiClient, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
+    GeminiClient, GeminiLiveTranslator, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
 };
 use audiodub::infrastructure::secrets::StandardSecretStore;
 use std::env;
@@ -82,6 +82,10 @@ fn print_usage() {
     );
     println!("  --voice-2 <name>          Voice name for Speaker 2");
     println!("  --subtitles               Export .srt, .vtt, and bilingual transcript files");
+    println!(
+        "  --engine <mode>           Dubbing engine: studio (default) or live (gemini-3.5-live-translate-preview)"
+    );
+    println!("  --live, --live-translate  Shortcut for fast real-time Live Translate speech-to-speech");
     println!("\nTTS Studio Options:");
     println!(
         "  --voice, -v <name>        TTS voice: Puck, Charon, Kore, Fenrir, Aoede (default: Puck)"
@@ -106,6 +110,7 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let mut voice_1: Option<String> = None;
     let mut voice_2: Option<String> = None;
     let mut output_path_opt: Option<PathBuf> = None;
+    let mut engine = DubbingEngine::Studio;
 
     let mut i = 1;
     while i < args.len() {
@@ -133,6 +138,16 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
             "--output" | "-o" if i + 1 < args.len() => {
                 output_path_opt = Some(PathBuf::from(&args[i + 1]));
                 i += 1;
+            }
+            "--engine" if i + 1 < args.len() => {
+                let eng_str = args[i + 1].to_lowercase();
+                if eng_str == "live" || eng_str == "live-translate" {
+                    engine = DubbingEngine::LiveTranslate;
+                }
+                i += 1;
+            }
+            "--live" | "--live-translate" => {
+                engine = DubbingEngine::LiveTranslate;
             }
             _ => {}
         }
@@ -170,7 +185,14 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         client.clone(),
         settings.models.translator.clone(),
     ));
-    let synthesizer = Arc::new(GeminiSynthesizer::new(client, settings.models.tts.clone()));
+    let synthesizer = Arc::new(GeminiSynthesizer::new(
+        client.clone(),
+        settings.models.tts.clone(),
+    ));
+    let live_translator = Arc::new(GeminiLiveTranslator::new(
+        client,
+        settings.models.live_translate.clone(),
+    ));
 
     let orchestrator = PipelineOrchestrator::with_settings(
         transcriber,
@@ -179,7 +201,8 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         audio_engine,
         job_repo,
         &settings,
-    );
+    )
+    .with_live_translator(live_translator);
 
     let voice_config = if voice_1.is_some() || voice_2.is_some() {
         Some(SpeakerVoiceConfig::new(voice_1, voice_2))
@@ -191,12 +214,14 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         tone,
         voice_config,
         export_subtitles: true,
+        engine,
     };
 
     println!(
-        "Starting media translation: {} -> {} (Tone: {})",
+        "Starting media translation: {} -> {} (Engine: {}, Tone: {})",
         source_lang_str,
         target_lang_str,
+        engine.as_str(),
         tone.as_str()
     );
 
@@ -358,6 +383,7 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
             tone,
             voice_config: voice_config.clone(),
             export_subtitles: true,
+            engine: DubbingEngine::default(),
         };
 
         match orchestrator
