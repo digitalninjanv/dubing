@@ -112,12 +112,14 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
             "setup": {
                 "model": format!("models/{}", self.model_name),
                 "generationConfig": {
-                    "responseModalities": ["AUDIO"]
+                    "responseModalities": ["AUDIO"],
+                    "translationConfig": {
+                        "targetLanguageCode": target_lang.as_str(),
+                        "echoTargetLanguage": true
+                    }
                 },
-                "translationConfig": {
-                    "targetLanguageCode": target_lang.as_str(),
-                    "echoTargetLanguage": true
-                }
+                "inputAudioTranscription": {},
+                "outputAudioTranscription": {}
             }
         });
 
