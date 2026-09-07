@@ -25,7 +25,7 @@ impl GeminiClient {
                 .unwrap_or_default(),
             api_key: api_key.into(),
             base_url: "https://generativelanguage.googleapis.com".to_string(),
-            backoffs: vec![1, 2, 4, 8],
+            backoffs: vec![2, 5, 10, 20],
         }
     }
 
@@ -76,12 +76,38 @@ impl GeminiClient {
 
                     // Check for rate limit or server error (retryable)
                     if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+                        // Respect Retry-After header if provided by Google Gateway
+                        let retry_after_secs = response
+                            .headers()
+                            .get(reqwest::header::RETRY_AFTER)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(0);
+
+                        let base_delay = if retry_after_secs > 0 {
+                            retry_after_secs.max(*delay_secs)
+                        } else {
+                            *delay_secs
+                        };
+
+                        // Add random jitter (250ms - 1250ms) to eliminate thundering herd / retry stampedes
+                        let jitter_ms = (std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .subsec_nanos() as u64
+                            % 1000)
+                            + 250;
+                        let sleep_duration = Duration::from_millis(base_delay * 1000 + jitter_ms);
+
                         warn!(
-                            "Gemini API returned retryable status {} on attempt {} for {}. Retrying in {}s...",
-                            status, attempt + 1, operation_name, delay_secs
+                            "Gemini API returned retryable status {} on attempt {} for {}. Retrying in {:.2}s...",
+                            status,
+                            attempt + 1,
+                            operation_name,
+                            sleep_duration.as_secs_f64()
                         );
-                        if *delay_secs > 0 {
-                            tokio::time::sleep(Duration::from_secs(*delay_secs)).await;
+                        if sleep_duration.as_millis() > 0 {
+                            tokio::time::sleep(sleep_duration).await;
                         }
                         last_error = Some(DomainError::TransientError(format!(
                             "Gemini API returned status {}",

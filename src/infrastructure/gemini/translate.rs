@@ -62,13 +62,6 @@ impl GeminiTranslator {
             return Ok(Vec::new());
         }
 
-        let endpoint = format!(
-            "{}/v1beta/models/{}:generateContent?key={}",
-            self.client.base_url(),
-            self.model_name,
-            self.client.api_key()
-        );
-
         // Prepare segments JSON to provide to model with strict character budget
         let segments_json: Vec<serde_json::Value> = segments
             .iter()
@@ -140,72 +133,117 @@ Transcript segments:
         })?;
 
         let http_client = self.client.http().clone();
-        let target_endpoint = endpoint.clone();
+        let mut candidates = vec![self.model_name.as_str()];
+        let fallbacks = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
+        for fb in fallbacks {
+            if !candidates.contains(&fb) {
+                candidates.push(fb);
+            }
+        }
 
-        let response = self
-            .client
-            .post_with_retry("Gemini 3.1 Flash-Lite Translation", || {
-                let cli = http_client.clone();
-                let url = target_endpoint.clone();
-                let bytes = body_bytes.clone();
-                async move {
-                    cli.post(&url)
-                        .header("Content-Type", "application/json")
-                        .body(bytes)
-                        .send()
-                        .await
-                }
-            })
-            .await?;
+        let mut last_err = None;
+        for (i, &model) in candidates.iter().enumerate() {
+            if i > 0 {
+                tracing::info!("Fallback cascade: attempting translation with model '{}'", model);
+            }
 
-        let gen_response: GeminiGenerateResponse = response.json().await.map_err(|e| {
-            DomainError::PermanentApiError(format!(
-                "Failed to parse translation API response: {}",
-                e
-            ))
-        })?;
+            let endpoint = format!(
+                "{}/v1beta/models/{}:generateContent?key={}",
+                self.client.base_url(),
+                model,
+                self.client.api_key()
+            );
 
-        let text_content = gen_response
-            .candidates
-            .and_then(|mut c| {
-                if !c.is_empty() {
-                    Some(c.remove(0))
-                } else {
-                    None
-                }
-            })
-            .and_then(|c| c.content)
-            .and_then(|cnt| cnt.parts)
-            .and_then(|mut p| {
-                if !p.is_empty() {
-                    Some(p.remove(0))
-                } else {
-                    None
-                }
-            })
-            .and_then(|p| p.text)
-            .ok_or_else(|| {
-                DomainError::PermanentApiError("Empty translation content returned".to_string())
-            })?;
+            let op_name = format!("Gemini Translation ({})", model);
+            let target_endpoint = endpoint.clone();
+            let cli = http_client.clone();
+            let bytes = body_bytes.clone();
 
-        // Parse structured JSON output
-        let parsed_translations: TranslationResponsePayload = serde_json::from_str(&text_content)
-            .or_else(|_| {
-                // Fallback: try parsing as a direct array if the wrapper was omitted
-                serde_json::from_str::<Vec<RawTranslatedItem>>(&text_content).map(|items| {
-                    TranslationResponsePayload {
-                        translations: items,
+            let response = match self
+                .client
+                .post_with_retry(&op_name, move || {
+                    let c = cli.clone();
+                    let u = target_endpoint.clone();
+                    let b = bytes.clone();
+                    async move {
+                        c.post(&u)
+                            .header("Content-Type", "application/json")
+                            .body(b)
+                            .send()
+                            .await
                     }
                 })
-            })
-            .map_err(|e| {
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    if e.is_retryable() {
+                        tracing::warn!(
+                            "Translation model '{}' hit retryable rate-limit error ({}). Cascading to next model...",
+                            model,
+                            e
+                        );
+                        last_err = Some(e);
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+
+            let gen_response: GeminiGenerateResponse = response.json().await.map_err(|e| {
                 DomainError::PermanentApiError(format!(
-                    "Failed to parse JSON translation structure: {}. Response: {}",
-                    e, text_content
+                    "Failed to parse translation API response: {}",
+                    e
                 ))
             })?;
 
-        Ok(parsed_translations.translations)
+            let text_content = gen_response
+                .candidates
+                .and_then(|mut c| {
+                    if !c.is_empty() {
+                        Some(c.remove(0))
+                    } else {
+                        None
+                    }
+                })
+                .and_then(|c| c.content)
+                .and_then(|cnt| cnt.parts)
+                .and_then(|mut p| {
+                    if !p.is_empty() {
+                        Some(p.remove(0))
+                    } else {
+                        None
+                    }
+                })
+                .and_then(|p| p.text)
+                .ok_or_else(|| {
+                    DomainError::PermanentApiError("Empty translation content returned".to_string())
+                })?;
+
+            // Parse structured JSON output
+            let parsed_translations: TranslationResponsePayload = serde_json::from_str(&text_content)
+                .or_else(|_| {
+                    // Fallback: try parsing as a direct array if the wrapper was omitted
+                    serde_json::from_str::<Vec<RawTranslatedItem>>(&text_content).map(|items| {
+                        TranslationResponsePayload {
+                            translations: items,
+                        }
+                    })
+                })
+                .map_err(|e| {
+                    DomainError::PermanentApiError(format!(
+                        "Failed to parse JSON translation structure: {}. Response: {}",
+                        e, text_content
+                    ))
+                })?;
+
+            return Ok(parsed_translations.translations);
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            DomainError::TransientError("All candidate translation models exhausted".to_string())
+        }))
     }
 }
 

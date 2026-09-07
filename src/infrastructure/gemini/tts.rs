@@ -80,12 +80,10 @@ impl GeminiSynthesizer {
 
         wav
     }
-}
-
-#[async_trait]
-impl SpeechSynthesizer for GeminiSynthesizer {
-    async fn synthesize_segment(
+    /// Helper to execute TTS request against a specific Gemini model
+    async fn try_synthesize_with_model(
         &self,
+        model: &str,
         segment: &TranslationSegment,
         voice: &VoiceProfile,
         output_path: &Path,
@@ -93,7 +91,7 @@ impl SpeechSynthesizer for GeminiSynthesizer {
         let endpoint = format!(
             "{}/v1beta/models/{}:generateContent?key={}",
             self.client.base_url(),
-            self.model_name,
+            model,
             self.client.api_key()
         );
 
@@ -148,10 +146,11 @@ impl SpeechSynthesizer for GeminiSynthesizer {
 
         let http_client = self.client.http().clone();
         let target_endpoint = endpoint.clone();
+        let op_name = format!("Gemini TTS ({})", model);
 
         let response = self
             .client
-            .post_with_retry("Gemini 3.1 Flash TTS", || {
+            .post_with_retry(&op_name, || {
                 let cli = http_client.clone();
                 let url = target_endpoint.clone();
                 let bytes = body_bytes.clone();
@@ -236,6 +235,58 @@ impl SpeechSynthesizer for GeminiSynthesizer {
             path: output_path.to_path_buf(),
             duration_ms: metadata.duration_ms,
         })
+    }
+}
+
+#[async_trait]
+impl SpeechSynthesizer for GeminiSynthesizer {
+    async fn synthesize_segment(
+        &self,
+        segment: &TranslationSegment,
+        voice: &VoiceProfile,
+        output_path: &Path,
+    ) -> Result<SynthesizedSegment, DomainError> {
+        let mut candidate_models = vec![self.model_name.as_str()];
+        // Official active 2026 Google Gemini TTS models
+        let fallbacks = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
+        for fb in fallbacks {
+            if !candidate_models.contains(&fb) {
+                candidate_models.push(fb);
+            }
+        }
+
+        let mut last_error = None;
+        for (attempt, &model) in candidate_models.iter().enumerate() {
+            if attempt > 0 {
+                tracing::info!(
+                    "Multi-model TTS fallback: switching to model '{}' for segment {}",
+                    model,
+                    segment.segment_id
+                );
+            }
+
+            match self.try_synthesize_with_model(model, segment, voice, output_path).await {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    if e.is_retryable() {
+                        tracing::warn!(
+                            "TTS model '{}' failed with retryable rate limit/service error ({}). Cascading to next candidate model...",
+                            model,
+                            e
+                        );
+                        last_error = Some(e);
+                        continue;
+                    } else {
+                        // Non-retryable permanent error (e.g. auth failed)
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            DomainError::TransientError("All candidate TTS models exhausted".to_string())
+        }))
     }
 
     async fn synthesize_text(

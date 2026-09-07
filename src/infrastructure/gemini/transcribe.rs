@@ -112,7 +112,7 @@ impl GeminiTranscriber {
         file_info: &super::files::GeminiFileInfo,
         source_hint: &LanguageId,
     ) -> Result<Transcript, DomainError> {
-        let models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        let models = ["gemini-3.5-flash", "gemini-2.5-flash"];
         let mut last_err = None;
 
         for model in models {
@@ -297,7 +297,7 @@ Respond with ONLY a valid JSON object matching this schema:
         })?;
 
         let b64_audio = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
-        let models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+        let models = ["gemini-3.5-flash", "gemini-2.5-flash"];
         let mut last_err = None;
 
         let lang_instruction = if source_hint.is_auto() {

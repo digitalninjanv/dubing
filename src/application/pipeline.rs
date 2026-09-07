@@ -359,6 +359,14 @@ impl PipelineOrchestrator {
                     return Err(DomainError::Cancelled);
                 }
 
+                // Request pacing: gentle stagger between segment dispatches to avoid burst rate spikes
+                if idx > 0 {
+                    let stagger_ms = ((idx % 2) as u64) * 350;
+                    if stagger_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(stagger_ms)).await;
+                    }
+                }
+
                 let synth_result = synth
                     .synthesize_segment(&seg, &voice, &segment_output_file)
                     .await?;
@@ -367,8 +375,8 @@ impl PipelineOrchestrator {
             });
         }
 
-        // Concurrency level: 4 parallel TTS streams
-        const TTS_CONCURRENCY: usize = 4;
+        // Controlled concurrency = 2 as per PRD Section 23 to remain well within Free Tier RPM and prevent 429 errors
+        const TTS_CONCURRENCY: usize = 2;
         let mut stream = stream::iter(tasks).buffer_unordered(TTS_CONCURRENCY);
         let mut collected: Vec<(usize, SynthesizedSegment)> =
             Vec::with_capacity(translated.segments.len());
