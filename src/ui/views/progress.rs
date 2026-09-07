@@ -127,6 +127,10 @@ impl ProgressView {
         &self.scroller
     }
 
+    pub fn update_detail(&self, detail: &str) {
+        self.detail_label.set_text(detail);
+    }
+
     pub fn update_progress(&self, progress: &JobProgress) {
         self.progress_bar.set_fraction(progress.fraction());
         self.stage_label

@@ -412,6 +412,10 @@ impl TtsStudioView {
         self.status_label.set_text(status);
     }
 
+    pub fn set_status(&self, status: &str) {
+        self.status_label.set_text(status);
+    }
+
     pub fn set_result(&self, path: PathBuf, duration_ms: u64) {
         *self.current_audio_path.borrow_mut() = Some(path.clone());
         self.result_row.set_title(&format!(

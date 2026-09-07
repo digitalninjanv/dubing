@@ -309,3 +309,50 @@ async fn test_gemini_client_retry_exhaustion() {
         err
     );
 }
+
+#[tokio::test]
+async fn test_gemini_client_retry_status_callback() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/test_rate_limit_cb"))
+        .respond_with(ResponseTemplate::new(429))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/test_rate_limit_cb"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{\"status\":\"ok\"}"))
+        .mount(&server)
+        .await;
+
+    let callback_messages = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let cb_clone = callback_messages.clone();
+
+    let client = GeminiClient::new("valid-key")
+        .with_base_url(server.uri())
+        .with_backoffs(vec![1, 0])
+        .with_status_callback(std::sync::Arc::new(move |msg: &str| {
+            cb_clone.lock().unwrap().push(msg.to_string());
+        }));
+
+    let http_client = client.http().clone();
+    let url = format!("{}/test_rate_limit_cb", server.uri());
+
+    let response = client
+        .post_with_retry("Test 429 Callback", || {
+            let cli = http_client.clone();
+            let u = url.clone();
+            async move { cli.post(&u).send().await }
+        })
+        .await
+        .expect("Request should succeed on retry");
+
+    assert_eq!(response.status().as_u16(), 200);
+
+    let msgs = callback_messages.lock().unwrap().clone();
+    assert!(!msgs.is_empty(), "Status callback should have received progress messages");
+    assert!(msgs[0].contains("429") || msgs[0].contains("rate limit"), "Message should mention 429/rate limit");
+}
+

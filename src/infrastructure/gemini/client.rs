@@ -1,7 +1,10 @@
 use crate::domain::DomainError;
 use reqwest::{Client, Response, StatusCode};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
+
+pub type RetryStatusCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
 #[derive(Clone)]
 pub struct GeminiClient {
@@ -9,6 +12,7 @@ pub struct GeminiClient {
     api_key: String,
     base_url: String,
     backoffs: Vec<u64>,
+    status_callback: Option<RetryStatusCallback>,
 }
 
 impl GeminiClient {
@@ -25,7 +29,8 @@ impl GeminiClient {
                 .unwrap_or_default(),
             api_key: api_key.into(),
             base_url: "https://generativelanguage.googleapis.com".to_string(),
-            backoffs: vec![1, 2, 4],
+            backoffs: vec![3, 8, 15, 25, 35],
+            status_callback: None,
         }
     }
 
@@ -37,6 +42,19 @@ impl GeminiClient {
     pub fn with_backoffs(mut self, backoffs: Vec<u64>) -> Self {
         self.backoffs = backoffs;
         self
+    }
+
+    pub fn with_status_callback(mut self, cb: RetryStatusCallback) -> Self {
+        self.status_callback = Some(cb);
+        self
+    }
+
+    pub fn set_status_callback(&mut self, cb: RetryStatusCallback) {
+        self.status_callback = Some(cb);
+    }
+
+    pub fn status_callback(&self) -> Option<&RetryStatusCallback> {
+        self.status_callback.as_ref()
     }
 
     pub fn http(&self) -> &Client {
@@ -61,8 +79,10 @@ impl GeminiClient {
         Fut: std::future::Future<Output = Result<Response, reqwest::Error>>,
     {
         let mut last_error = None;
+        let total_attempts = self.backoffs.len();
 
         for (attempt, delay_secs) in self.backoffs.iter().enumerate() {
+            let current_attempt = attempt + 1;
             match make_request().await {
                 Ok(response) => {
                     let status = response.status();
@@ -85,30 +105,58 @@ impl GeminiClient {
                             .unwrap_or(0);
 
                         let base_delay = if retry_after_secs > 0 {
-                            retry_after_secs.min(5).max(*delay_secs)
+                            retry_after_secs.max(*delay_secs)
                         } else {
                             *delay_secs
                         };
 
-                        // Add small jitter (100ms - 500ms) to eliminate thundering herd / retry stampedes
-                        let jitter_ms = (std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .subsec_nanos() as u64
-                            % 400)
-                            + 100;
-                        let sleep_duration = Duration::from_millis(base_delay * 1000 + jitter_ms);
+                        let total_sleep_ms = if base_delay > 0 {
+                            // Add small jitter (100ms - 500ms) to eliminate thundering herd / retry stampedes
+                            let jitter_ms = (std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .subsec_nanos() as u64
+                                % 400)
+                                + 100;
+                            base_delay * 1000 + jitter_ms
+                        } else {
+                            0
+                        };
+
+                        let sleep_duration = Duration::from_millis(total_sleep_ms);
 
                         warn!(
-                            "Gemini API returned retryable status {} on attempt {} for {}. Retrying in {:.2}s...",
+                            "Gemini API returned retryable status {} on attempt {}/{} for {}. Retrying in {:.2}s...",
                             status,
-                            attempt + 1,
+                            current_attempt,
+                            total_attempts,
                             operation_name,
                             sleep_duration.as_secs_f64()
                         );
-                        if sleep_duration.as_millis() > 0 {
-                            tokio::time::sleep(sleep_duration).await;
+
+                        if total_sleep_ms > 0 {
+                            let mut remaining_ms = total_sleep_ms;
+                            while remaining_ms > 0 {
+                                let remaining_secs = remaining_ms.div_ceil(1000);
+                                if let Some(ref cb) = self.status_callback {
+                                    cb(&format!(
+                                        "Gemini rate limit ({}): Waiting {}s for quota reset (attempt {}/{})...",
+                                        status, remaining_secs, current_attempt, total_attempts
+                                    ));
+                                }
+                                let step = remaining_ms.min(1000);
+                                tokio::time::sleep(Duration::from_millis(step)).await;
+                                remaining_ms = remaining_ms.saturating_sub(step);
+                            }
+
+                            if let Some(ref cb) = self.status_callback {
+                                cb(&format!(
+                                    "Retrying {} (attempt {}/{})...",
+                                    operation_name, current_attempt + 1, total_attempts
+                                ));
+                            }
                         }
+
                         last_error = Some(DomainError::TransientError(format!(
                             "Gemini API returned status {}",
                             status
@@ -125,13 +173,35 @@ impl GeminiClient {
                 }
                 Err(err) => {
                     if err.is_timeout() || err.is_connect() {
+                        let total_sleep_ms = delay_secs * 1000;
                         warn!(
-                            "Network timeout/connect error on attempt {} for {}: {}. Retrying in {}s...",
-                            attempt + 1, operation_name, err, delay_secs
+                            "Network timeout/connect error on attempt {}/{} for {}: {}. Retrying in {}s...",
+                            current_attempt, total_attempts, operation_name, err, delay_secs
                         );
-                        if *delay_secs > 0 {
-                            tokio::time::sleep(Duration::from_secs(*delay_secs)).await;
+
+                        if total_sleep_ms > 0 {
+                            let mut remaining_ms = total_sleep_ms;
+                            while remaining_ms > 0 {
+                                let remaining_secs = remaining_ms.div_ceil(1000);
+                                if let Some(ref cb) = self.status_callback {
+                                    cb(&format!(
+                                        "Network connection issue: Waiting {}s before retry (attempt {}/{})...",
+                                        remaining_secs, current_attempt, total_attempts
+                                    ));
+                                }
+                                let step = remaining_ms.min(1000);
+                                tokio::time::sleep(Duration::from_millis(step)).await;
+                                remaining_ms = remaining_ms.saturating_sub(step);
+                            }
+
+                            if let Some(ref cb) = self.status_callback {
+                                cb(&format!(
+                                    "Reconnecting {} (attempt {}/{})...",
+                                    operation_name, current_attempt + 1, total_attempts
+                                ));
+                            }
                         }
+
                         last_error = Some(DomainError::TransientError(format!(
                             "Network error: {}",
                             err

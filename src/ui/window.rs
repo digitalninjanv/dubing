@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone)]
 pub enum UiMessage {
     Progress(JobProgress),
+    ProgressDetail(String),
     Success(AudioArtifact, String, String),
     Error(DomainError),
 }
@@ -222,6 +223,9 @@ impl MainWindow {
                     UiMessage::Progress(progress) => {
                         progress_clone_msg.update_progress(&progress);
                     }
+                    UiMessage::ProgressDetail(detail) => {
+                        progress_clone_msg.update_detail(&detail);
+                    }
                     UiMessage::Success(artifact, src_lang, tgt_lang) => {
                         result_clone_msg.set_result(&artifact, &src_lang, &tgt_lang);
                         dubbing_stack_msg.set_visible_child_name("result");
@@ -328,7 +332,12 @@ impl MainWindow {
 
                 let job = Job::new(doc, src_lang.clone(), tgt_lang.clone());
 
-                let gemini_client = GeminiClient::new(api_key);
+                let sender_retry = sender_clone.clone();
+                let status_cb: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(move |msg: &str| {
+                    let _ = sender_retry.send_blocking(UiMessage::ProgressDetail(msg.to_string()));
+                });
+
+                let gemini_client = GeminiClient::new(api_key).with_status_callback(status_cb);
                 let transcriber = Arc::new(GeminiTranscriber::new(
                     gemini_client.clone(),
                     settings_bg.models.transcriber.clone(),
@@ -434,7 +443,19 @@ impl MainWindow {
                 );
                 let out_wav_path = tts_dir.join(&filename);
 
-                let client = GeminiClient::new(api_key);
+                let (tts_status_tx, tts_status_rx) = async_channel::unbounded::<String>();
+                let tts_ui_status = tts_ui.clone();
+                glib::spawn_future_local(async move {
+                    while let Ok(msg) = tts_status_rx.recv().await {
+                        tts_ui_status.set_status(&msg);
+                    }
+                });
+
+                let status_cb: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(move |msg: &str| {
+                    let _ = tts_status_tx.send_blocking(msg.to_string());
+                });
+
+                let client = GeminiClient::new(api_key).with_status_callback(status_cb);
                 let synth = GeminiSynthesizer::new(client, tts_model_name);
 
                 use crate::application::ports::SpeechSynthesizer;
