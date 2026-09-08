@@ -57,8 +57,18 @@ impl LiveDubberOrchestrator {
     {
         on_status(LiveDubberStatus::Initializing);
 
+        // Best effort: remove virtual sinks leaked by crashed sessions before
+        // creating ours, so `create_null_sink` never hits "already exists".
+        if self.audio_router.is_available().await {
+            let _ = self
+                .audio_router
+                .cleanup_stale_sinks("AudioDub_Virtual_Sink")
+                .await;
+        }
+
         let mut created_module_id: Option<u32> = None;
         let moved_apps: Arc<Mutex<HashSet<u32>>> = Arc::new(Mutex::new(HashSet::new()));
+        let mut watcher_handle: Option<tokio::task::JoinHandle<()>> = None;
         let capture_source: String;
 
         match options.source_mode {
@@ -102,7 +112,7 @@ impl LiveDubberOrchestrator {
                                 let watcher_token = cancel_token.clone();
 
                                 // P0-2: keep watcher handle so we can abort it on exit and avoid leak after to_restore snapshot.
-                                let _watcher_handle = tokio::spawn(async move {
+                                watcher_handle = Some(tokio::spawn(async move {
                                     while !watcher_token.is_cancelled() {
                                         if let Ok(apps) = watcher_router.list_sink_inputs().await {
                                             for app in apps {
@@ -132,7 +142,7 @@ impl LiveDubberOrchestrator {
                                             _ = tokio::time::sleep(std::time::Duration::from_millis(700)) => {}
                                         }
                                     }
-                                });
+                                }));
                             }
                         }
                         Err(e) => {
@@ -170,6 +180,8 @@ impl LiveDubberOrchestrator {
             let (output_tx, output_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
             let (transcript_tx, mut transcript_rx) =
                 tokio::sync::mpsc::channel::<LiveTranscriptUpdate>(32);
+            // Flush channel: server `interrupted` signal drops stale playback.
+            let (flush_tx, flush_rx) = tokio::sync::mpsc::channel::<()>(8);
 
             // 1. Start audio capture worker
             info!("Starting live capture worker on: {}", capture_source);
@@ -184,8 +196,13 @@ impl LiveDubberOrchestrator {
                     .await
                     .unwrap_or_else(|_| "default".to_string());
                 info!("Starting live playback worker on: {}", target_sink);
-                AudioStreamPlayer::start_playback(&target_sink, output_rx, cancel_token.clone())
-                    .await?;
+                AudioStreamPlayer::start_playback(
+                    &target_sink,
+                    output_rx,
+                    flush_rx,
+                    cancel_token.clone(),
+                )
+                .await?;
             }
 
             // 3. Spawn transcript listener
@@ -211,6 +228,7 @@ impl LiveDubberOrchestrator {
                     input_rx,
                     output_tx,
                     transcript_tx,
+                    flush_tx,
                     cancel_token.clone(),
                 )
                 .await
@@ -218,6 +236,9 @@ impl LiveDubberOrchestrator {
         .await;
 
         // 5. Cleanup and teardown: ALWAYS restore original app audio routing
+        if let Some(handle) = watcher_handle {
+            handle.abort();
+        }
         let to_restore: Vec<u32> = {
             let locked = moved_apps.lock().await;
             locked.iter().copied().collect()

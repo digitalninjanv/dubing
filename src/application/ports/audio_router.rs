@@ -25,4 +25,9 @@ pub trait AudioRouter: Send + Sync {
 
     /// Gets the name of the default physical audio output sink.
     async fn get_default_sink_name(&self) -> Result<String, DomainError>;
+
+    /// Removes leaked virtual sinks from crashed sessions (best effort).
+    async fn cleanup_stale_sinks(&self, _prefix: &str) -> Result<(), DomainError> {
+        Ok(())
+    }
 }

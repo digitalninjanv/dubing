@@ -2,6 +2,7 @@ pub mod client;
 pub mod files;
 pub mod live_stream;
 pub mod live_translate;
+pub mod live_wire;
 pub mod transcribe;
 pub mod translate;
 pub mod tts;

@@ -20,12 +20,15 @@ impl AudioStreamCapture {
             source_name.is_empty() || source_name == "@DEFAULT_SOURCE@" || source_name == "default";
         let effective_source = if is_default { "default" } else { source_name };
 
-        let use_pw_cat = Command::new("pw-cat")
-            .arg("--version")
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+        let use_pw_cat = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            Command::new("pw-cat").arg("--version").output(),
+        )
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|o| o.status.success())
+        .unwrap_or(false);
 
         let backend = if use_pw_cat {
             "PipeWire"
@@ -57,6 +60,7 @@ impl AudioStreamCapture {
             cmd.arg("-")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
+                .kill_on_drop(true)
                 .spawn()
                 .map_err(|e| {
                     DomainError::Internal(format!(
@@ -93,6 +97,7 @@ impl AudioStreamCapture {
                 ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
+                .kill_on_drop(true)
                 .spawn()
                 .map_err(|e| {
                     DomainError::Internal(format!("Failed to spawn FFmpeg capture fallback: {}", e))

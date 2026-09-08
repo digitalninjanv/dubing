@@ -14,18 +14,22 @@ impl AudioStreamPlayer {
     pub async fn start_playback(
         sink_name: &str,
         mut pcm_rx: Receiver<Vec<u8>>,
+        mut flush_rx: Receiver<()>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
         let is_default =
             sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" || sink_name == "default";
         let effective_sink = if is_default { "default" } else { sink_name };
 
-        let use_pw_cat = Command::new("pw-cat")
-            .arg("--version")
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+        let use_pw_cat = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            Command::new("pw-cat").arg("--version").output(),
+        )
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|o| o.status.success())
+        .unwrap_or(false);
 
         let backend = if use_pw_cat {
             "PipeWire"
@@ -57,6 +61,7 @@ impl AudioStreamPlayer {
             cmd.arg("-")
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
+                .kill_on_drop(true)
                 .spawn()
                 .map_err(|e| {
                     DomainError::Internal(format!(
@@ -88,6 +93,7 @@ impl AudioStreamPlayer {
                 ])
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
+                .kill_on_drop(true)
                 .spawn()
                 .map_err(|e| {
                     DomainError::Internal(format!(
@@ -122,6 +128,15 @@ impl AudioStreamPlayer {
                     _ = cancel_token.cancelled() => {
                         debug!("Playback loop cancelled");
                         break;
+                    }
+                    // Server signalled `interrupted`: drop stale queued audio
+                    // so playback doesn't lag behind the live conversation.
+                    _ = flush_rx.recv() => {
+                        let mut dropped = 0u32;
+                        while pcm_rx.try_recv().is_ok() {
+                            dropped += 1;
+                        }
+                        debug!("Playback queue flushed ({dropped} stale chunks dropped)");
                     }
                     maybe_chunk = pcm_rx.recv() => {
                         match maybe_chunk {

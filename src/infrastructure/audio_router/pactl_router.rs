@@ -2,7 +2,12 @@ use crate::application::ports::AudioRouter;
 use crate::domain::{AudioAppInfo, DomainError};
 use async_trait::async_trait;
 use std::process::Command;
+use std::time::Duration;
 use tracing::{debug, info, warn};
+
+/// Timeout for every `pactl` invocation: never block the Tokio executor on a
+/// hung audio server (P0-3). All blocking calls run on `spawn_blocking`.
+const PACTL_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct PactlAudioRouter;
 
@@ -12,6 +17,28 @@ impl PactlAudioRouter {
     }
     pub fn is_browser_app(app: &AudioAppInfo) -> bool {
         app.is_browser()
+    }
+
+    /// Run `pactl` off the async executor with a timeout.
+    async fn run_pactl(args: Vec<String>) -> Result<std::process::Output, DomainError> {
+        let joined = args.join(" ");
+        let res = tokio::time::timeout(
+            PACTL_TIMEOUT,
+            tokio::task::spawn_blocking(move || Command::new("pactl").args(&args).output()),
+        )
+        .await
+        .map_err(|_| {
+            DomainError::TransientError(format!(
+                "pactl '{joined}' timed out after {PACTL_TIMEOUT:?} (is PipeWire/Pulse running?)"
+            ))
+        })?
+        .map_err(|e| DomainError::Internal(format!("Audio router task failed: {e}")))?
+        .map_err(|e| DomainError::Internal(format!("Failed to execute pactl {joined}: {e}")))?;
+        Ok(res)
+    }
+
+    fn args(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
     }
 }
 
@@ -24,28 +51,21 @@ impl Default for PactlAudioRouter {
 #[async_trait]
 impl AudioRouter for PactlAudioRouter {
     async fn is_available(&self) -> bool {
-        match Command::new("pactl").arg("info").output() {
+        match Self::run_pactl(Self::args(&["info"])).await {
             Ok(out) => out.status.success(),
             Err(_) => false,
         }
     }
 
     async fn create_null_sink(&self, sink_name: &str) -> Result<u32, DomainError> {
-        let desc_arg = format!(
-            "sink_properties=device.description=\"AudioDub_{}\"",
-            sink_name
-        );
-        let output = Command::new("pactl")
-            .args([
-                "load-module",
-                "module-null-sink",
-                &format!("sink_name={}", sink_name),
-                &desc_arg,
-            ])
-            .output()
-            .map_err(|e| {
-                DomainError::Internal(format!("Failed to execute pactl load-module: {}", e))
-            })?;
+        let desc_arg = format!("sink_properties=device.description=\"AudioDub_{sink_name}\"");
+        let output = Self::run_pactl(Self::args(&[
+            "load-module",
+            "module-null-sink",
+            &format!("sink_name={sink_name}"),
+            &desc_arg,
+        ]))
+        .await?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -58,47 +78,91 @@ impl AudioRouter for PactlAudioRouter {
         let id_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let module_id: u32 = id_str.parse().map_err(|e| {
             DomainError::Internal(format!(
-                "Failed to parse module ID from pactl output '{}': {}",
-                id_str, e
+                "Failed to parse module ID from pactl output '{id_str}': {e}"
             ))
         })?;
 
-        info!(
-            "Created virtual null sink '{}' (module ID: {})",
-            sink_name, module_id
-        );
+        info!("Created virtual null sink '{sink_name}' (module ID: {module_id})");
         Ok(module_id)
     }
 
     async fn unload_null_sink(&self, module_id: u32) -> Result<(), DomainError> {
-        let output = Command::new("pactl")
-            .args(["unload-module", &module_id.to_string()])
-            .output()
-            .map_err(|e| {
-                DomainError::Internal(format!("Failed to execute pactl unload-module: {}", e))
-            })?;
+        let output =
+            Self::run_pactl(Self::args(&["unload-module", &module_id.to_string()])).await?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
             warn!(
-                "pactl unload-module {} warning: {}",
-                module_id,
+                "pactl unload-module {module_id} warning: {}",
                 err_msg.trim()
             );
         } else {
-            info!("Unloaded virtual null sink module {}", module_id);
+            info!("Unloaded virtual null sink module {module_id}");
         }
 
         Ok(())
     }
 
+    async fn cleanup_stale_sinks(&self, prefix: &str) -> Result<(), DomainError> {
+        // Remove AudioDub null sinks leaked by crashed sessions: parse
+        // `pactl list modules` for module-null-sink entries whose argument
+        // contains our prefix, then unload them by module id.
+        let output = Self::run_pactl(Self::args(&["list", "modules"])).await?;
+        if !output.status.success() {
+            return Ok(());
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut cur_id: Option<u32> = None;
+        let mut cur_is_null_sink = false;
+        let mut cur_has_prefix = false;
+        let mut stale: Vec<u32> = Vec::new();
+
+        let flush = |id: &mut Option<u32>,
+                     null_sink: &mut bool,
+                     prefixed: &mut bool,
+                     out: &mut Vec<u32>| {
+            if *null_sink && *prefixed {
+                if let Some(i) = id.take() {
+                    out.push(i);
+                }
+            }
+            *id = None;
+            *null_sink = false;
+            *prefixed = false;
+        };
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("Module #") {
+                flush(
+                    &mut cur_id,
+                    &mut cur_is_null_sink,
+                    &mut cur_has_prefix,
+                    &mut stale,
+                );
+                cur_id = rest.trim().parse::<u32>().ok();
+            } else if trimmed.starts_with("Name:") && trimmed.contains("module-null-sink") {
+                cur_is_null_sink = true;
+            } else if trimmed.starts_with("Argument:") && trimmed.contains(prefix) {
+                cur_has_prefix = true;
+            }
+        }
+        flush(
+            &mut cur_id,
+            &mut cur_is_null_sink,
+            &mut cur_has_prefix,
+            &mut stale,
+        );
+
+        for id in stale {
+            info!("Cleaning up stale AudioDub null sink (module {id})");
+            let _ = self.unload_null_sink(id).await;
+        }
+        Ok(())
+    }
+
     async fn list_sink_inputs(&self) -> Result<Vec<AudioAppInfo>, DomainError> {
-        let output = Command::new("pactl")
-            .args(["list", "sink-inputs"])
-            .output()
-            .map_err(|e| {
-                DomainError::Internal(format!("Failed to execute pactl list sink-inputs: {}", e))
-            })?;
+        let output = Self::run_pactl(Self::args(&["list", "sink-inputs"])).await?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -122,7 +186,7 @@ impl AudioRouter for PactlAudioRouter {
                 if let Some(id) = cur_id {
                     apps.push(AudioAppInfo {
                         sink_input_id: id,
-                        application_name: cur_app_name.unwrap_or_else(|| format!("App #{}", id)),
+                        application_name: cur_app_name.unwrap_or_else(|| format!("App #{id}")),
                         binary_name: cur_binary_name.unwrap_or_else(|| "unknown".to_string()),
                         media_name: cur_media_name,
                     });
@@ -151,7 +215,7 @@ impl AudioRouter for PactlAudioRouter {
         if let Some(id) = cur_id {
             apps.push(AudioAppInfo {
                 sink_input_id: id,
-                application_name: cur_app_name.unwrap_or_else(|| format!("App #{}", id)),
+                application_name: cur_app_name.unwrap_or_else(|| format!("App #{id}")),
                 binary_name: cur_binary_name.unwrap_or_else(|| "unknown".to_string()),
                 media_name: cur_media_name,
             });
@@ -166,16 +230,13 @@ impl AudioRouter for PactlAudioRouter {
         sink_input_id: u32,
         sink_name: &str,
     ) -> Result<(), DomainError> {
-        info!(
-            "Moving sink-input {} to sink '{}'",
-            sink_input_id, sink_name
-        );
-        let output = Command::new("pactl")
-            .args(["move-sink-input", &sink_input_id.to_string(), sink_name])
-            .output()
-            .map_err(|e| {
-                DomainError::Internal(format!("Failed to execute pactl move-sink-input: {}", e))
-            })?;
+        info!("Moving sink-input {sink_input_id} to sink '{sink_name}'");
+        let output = Self::run_pactl(Self::args(&[
+            "move-sink-input",
+            &sink_input_id.to_string(),
+            sink_name,
+        ]))
+        .await?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -189,21 +250,18 @@ impl AudioRouter for PactlAudioRouter {
     }
 
     async fn restore_sink_input(&self, sink_input_id: u32) -> Result<(), DomainError> {
-        info!("Restoring sink-input {} to @DEFAULT_SINK@", sink_input_id);
-        let output = Command::new("pactl")
-            .args([
-                "move-sink-input",
-                &sink_input_id.to_string(),
-                "@DEFAULT_SINK@",
-            ])
-            .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to restore sink-input: {}", e)))?;
+        info!("Restoring sink-input {sink_input_id} to @DEFAULT_SINK@");
+        let output = Self::run_pactl(Self::args(&[
+            "move-sink-input",
+            &sink_input_id.to_string(),
+            "@DEFAULT_SINK@",
+        ]))
+        .await?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
             warn!(
-                "Failed to restore sink-input {}: {}",
-                sink_input_id,
+                "Failed to restore sink-input {sink_input_id}: {}",
                 err_msg.trim()
             );
         }
@@ -212,10 +270,7 @@ impl AudioRouter for PactlAudioRouter {
     }
 
     async fn get_default_sink_name(&self) -> Result<String, DomainError> {
-        let output = Command::new("pactl")
-            .arg("get-default-sink")
-            .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to get default sink: {}", e)))?;
+        let output = Self::run_pactl(Self::args(&["get-default-sink"])).await?;
 
         if output.status.success() {
             let name = String::from_utf8_lossy(&output.stdout).trim().to_string();

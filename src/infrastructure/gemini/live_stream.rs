@@ -39,6 +39,7 @@ impl GeminiLiveStreamer {
         mut input_rx: Receiver<Vec<u8>>,
         output_tx: Sender<Vec<u8>>,
         transcript_tx: Sender<LiveTranscriptUpdate>,
+        _flush_tx: Sender<()>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
         let ws_url = format!(
