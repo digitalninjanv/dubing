@@ -16,18 +16,32 @@ impl AudioStreamCapture {
         chunk_tx: Sender<Vec<u8>>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
-        info!("Starting live audio capture from source: {}", source_name);
+        let effective_source = if source_name.is_empty() || source_name == "@DEFAULT_SOURCE@" {
+            "default"
+        } else {
+            source_name
+        };
 
-        // Standard FFmpeg pulse capture to stdout
+        info!("Starting live audio capture from source: {}", effective_source);
+
+        // Low-latency FFmpeg pulse capture to stdout
         let mut child = Command::new("ffmpeg")
             .args([
                 "-hide_banner",
                 "-loglevel",
                 "error",
+                "-fflags",
+                "nobuffer",
+                "-flags",
+                "low_delay",
+                "-probesize",
+                "32",
+                "-analyzeduration",
+                "0",
                 "-f",
                 "pulse",
                 "-i",
-                source_name,
+                effective_source,
                 "-vn",
                 "-f",
                 "s16le",
@@ -37,6 +51,8 @@ impl AudioStreamCapture {
                 "1",
                 "-ar",
                 "16000",
+                "-flush_packets",
+                "1",
                 "-",
             ])
             .stdout(Stdio::piped())
@@ -44,9 +60,25 @@ impl AudioStreamCapture {
             .spawn()
             .map_err(|e| DomainError::Internal(format!("Failed to spawn ffmpeg capture: {}", e)))?;
 
+        // Fast health check: detect if ffmpeg died immediately on opening input
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        if let Ok(Some(status)) = child.try_wait() {
+            let mut err_msg = String::new();
+            if let Some(mut err_pipe) = child.stderr.take() {
+                let mut err_buf = Vec::new();
+                let _ = err_pipe.read_to_end(&mut err_buf).await;
+                err_msg = String::from_utf8_lossy(&err_buf).trim().to_string();
+            }
+            return Err(DomainError::Internal(format!(
+                "Live audio capture source '{}' unavailable (status {}): {}",
+                effective_source, status, err_msg
+            )));
+        }
+
         let mut stdout = child.stdout.take().ok_or_else(|| {
             DomainError::Internal("Failed to capture stdout of ffmpeg".to_string())
         })?;
+        let mut stderr = child.stderr.take();
 
         tokio::spawn(async move {
             const CHUNK_SIZE: usize = 3200; // 100ms at 16kHz 16-bit mono
@@ -67,7 +99,16 @@ impl AudioStreamCapture {
                                 }
                             }
                             Err(e) => {
-                                warn!("Capture read error or end-of-stream: {}", e);
+                                let mut err_msg = String::new();
+                                if let Some(mut err_pipe) = stderr.take() {
+                                    let mut err_buf = Vec::new();
+                                    let _ = err_pipe.read_to_end(&mut err_buf).await;
+                                    err_msg = String::from_utf8_lossy(&err_buf).trim().to_string();
+                                }
+                                warn!(
+                                    "Capture read error or process terminated: {} (ffmpeg details: {})",
+                                    e, err_msg
+                                );
                                 break;
                             }
                         }

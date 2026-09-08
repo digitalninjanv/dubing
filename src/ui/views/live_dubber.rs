@@ -392,6 +392,24 @@ impl LiveDubberView {
         self.voice_combo.set_sensitive(true);
     }
 
+    fn set_ui_error(&self, err_msg: &str) {
+        *self.is_running.borrow_mut() = false;
+        self.start_stop_btn.set_label("Start Live Dubbing");
+        self.start_stop_btn.remove_css_class("destructive-action");
+        self.start_stop_btn.add_css_class("suggested-action");
+        self.spinner.set_visible(false);
+        self.spinner.stop();
+        self.status_pill.set_label("⚠️ Error");
+        self.status_pill.remove_css_class("accent");
+        self.status_pill.add_css_class("error");
+        self.status_desc.set_text(err_msg);
+        self.source_combo.set_sensitive(true);
+        self.apps_combo.set_sensitive(true);
+        self.model_combo.set_sensitive(true);
+        self.lang_combo.set_sensitive(true);
+        self.voice_combo.set_sensitive(true);
+    }
+
     fn set_ui_started(&self) {
         *self.is_running.borrow_mut() = true;
         self.start_stop_btn.set_label("Stop Live Dubbing");
@@ -488,11 +506,16 @@ impl LiveDubberView {
         glib::spawn_future_local(async move {
             while let Ok(status) = status_rx.recv().await {
                 view_status.status_desc.set_text(status.display_status());
-                if let LiveDubberStatus::Error(e) = &status {
-                    view_status.status_pill.set_label("Error");
-                    view_status.status_desc.set_text(e);
-                    view_status.set_ui_stopped();
-                    break;
+                match &status {
+                    LiveDubberStatus::Error(e) => {
+                        view_status.set_ui_error(e);
+                        break;
+                    }
+                    LiveDubberStatus::Stopped => {
+                        view_status.set_ui_stopped();
+                        break;
+                    }
+                    _ => {}
                 }
             }
         });
@@ -530,10 +553,17 @@ impl LiveDubberView {
                 )
                 .await;
 
-            if let Err(e) = res {
-                view_done.status_desc.set_text(&format!("Live Session Error: {}", e));
+            match res {
+                Ok(()) => {
+                    view_done.set_ui_stopped();
+                }
+                Err(crate::domain::DomainError::Cancelled) => {
+                    view_done.set_ui_stopped();
+                }
+                Err(e) => {
+                    view_done.set_ui_error(&format!("Error: {}", e));
+                }
             }
-            view_done.set_ui_stopped();
         });
     }
 }

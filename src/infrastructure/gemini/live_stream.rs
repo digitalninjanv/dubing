@@ -59,7 +59,9 @@ impl GeminiLiveStreamer {
 
         // Build official setup payload
         let setup_msg = match config.model_choice {
-            LiveModelChoice::Gemini35LiveTranslate => {
+            LiveModelChoice::Gemini35LiveTranslate
+            | LiveModelChoice::Gemini31FlashLive
+            | LiveModelChoice::Gemini25FlashNativeAudio => {
                 serde_json::json!({
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
@@ -71,32 +73,7 @@ impl GeminiLiveStreamer {
                                         "voiceName": config.voice_name
                                     }
                                 }
-                            },
-                            "inputAudioTranscription": {},
-                            "outputAudioTranscription": {},
-                            "translationConfig": {
-                                "targetLanguageCode": config.target_lang.as_str(),
-                                "echoTargetLanguage": true
                             }
-                        }
-                    }
-                })
-            }
-            LiveModelChoice::Gemini31FlashLive | LiveModelChoice::Gemini25FlashNativeAudio => {
-                serde_json::json!({
-                    "setup": {
-                        "model": format!("models/{}", config.model_choice.model_id()),
-                        "generationConfig": {
-                            "responseModalities": ["AUDIO"],
-                            "speechConfig": {
-                                "voiceConfig": {
-                                    "prebuiltVoiceConfig": {
-                                        "voiceName": config.voice_name
-                                    }
-                                }
-                            },
-                            "inputAudioTranscription": {},
-                            "outputAudioTranscription": {}
                         },
                         "systemInstruction": {
                             "parts": [{
@@ -114,8 +91,12 @@ impl GeminiLiveStreamer {
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
                         "generationConfig": {
-                            "responseModalities": ["TEXT"],
-                            "inputAudioTranscription": {}
+                            "responseModalities": ["TEXT"]
+                        },
+                        "systemInstruction": {
+                            "parts": [{
+                                "text": "You are a real-time speech transcription assistant. Transcribe incoming spoken audio into text immediately as speech occurs. Output only the verbatim transcript."
+                            }]
                         }
                     }
                 })
@@ -128,6 +109,68 @@ impl GeminiLiveStreamer {
             .map_err(|e| {
                 DomainError::TransientError(format!("Failed to send Live API setup message: {}", e))
             })?;
+
+        // 1. Handshake Phase: Must wait for setupComplete before sending any realtimeInput
+        info!("Waiting for Gemini Live API setupComplete acknowledgment...");
+        loop {
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    let _ = ws_sender.close().await;
+                    return Err(DomainError::Cancelled);
+                }
+                msg_res = ws_receiver.next() => {
+                    match msg_res {
+                        Some(Ok(Message::Text(text))) => {
+                            debug!("Live API Handshake response: {}", text);
+                            if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                                if let Some(err) = parsed.get("error") {
+                                    let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown Live API error");
+                                    let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+                                    error!("Gemini Live API handshake rejected: {} (code {})", msg, code);
+                                    let _ = ws_sender.close().await;
+                                    if code == 429 {
+                                        return Err(DomainError::TransientError(format!("Live API rate limited (429): {}", msg)));
+                                    } else {
+                                        return Err(DomainError::PermanentApiError(format!("Live API setup rejected: {}", msg)));
+                                    }
+                                }
+                                if parsed.get("setupComplete").or_else(|| parsed.get("setup_complete")).is_some() {
+                                    info!("Gemini Live API setup complete! Ready for real-time audio streaming.");
+                                    break;
+                                }
+                            }
+                        }
+                        Some(Ok(Message::Ping(p))) => {
+                            let _ = ws_sender.send(Message::Pong(p)).await;
+                        }
+                        Some(Ok(Message::Close(reason))) => {
+                            return Err(DomainError::TransientError(format!(
+                                "Gemini Live API closed connection during handshake: {:?}",
+                                reason
+                            )));
+                        }
+                        Some(Err(e)) => {
+                            return Err(DomainError::TransientError(format!(
+                                "WebSocket receive error during handshake: {}",
+                                e
+                            )));
+                        }
+                        None => {
+                            return Err(DomainError::TransientError(
+                                "Gemini Live API connection closed unexpectedly during handshake".to_string(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                    let _ = ws_sender.close().await;
+                    return Err(DomainError::TransientError(
+                        "Timed out waiting for Gemini Live API setupComplete acknowledgment (15s)".to_string(),
+                    ));
+                }
+            }
+        }
 
         debug!("Gemini Live API handshake established. Streaming audio chunks in real-time...");
 
@@ -146,7 +189,7 @@ impl GeminiLiveStreamer {
                     break;
                 }
 
-                // Forward incoming 16kHz PCM audio to Gemini Live API
+                // Forward incoming 16kHz PCM audio to Gemini Live API using official mediaChunks
                 maybe_chunk = input_rx.recv() => {
                     match maybe_chunk {
                         Some(raw_chunk) => {
@@ -194,15 +237,27 @@ impl GeminiLiveStreamer {
                                     }
                                 }
 
-                                if let Some(server_content) = parsed.get("serverContent") {
+                                let server_content = parsed
+                                    .get("serverContent")
+                                    .or_else(|| parsed.get("server_content"));
+
+                                if let Some(server_content) = server_content {
                                     let mut original_text: Option<String> = None;
                                     let mut translated_text: Option<String> = None;
 
                                     // 1. Audio synthesis parts
-                                    if let Some(model_turn) = server_content.get("modelTurn") {
+                                    let model_turn = server_content
+                                        .get("modelTurn")
+                                        .or_else(|| server_content.get("model_turn"));
+
+                                    if let Some(model_turn) = model_turn {
                                         if let Some(parts) = model_turn.get("parts").and_then(|p| p.as_array()) {
                                             for part in parts {
-                                                if let Some(inline_data) = part.get("inlineData") {
+                                                let inline_data = part
+                                                    .get("inlineData")
+                                                    .or_else(|| part.get("inline_data"));
+
+                                                if let Some(inline_data) = inline_data {
                                                     if let Some(b64_audio) = inline_data.get("data").and_then(|d| d.as_str()) {
                                                         if let Ok(audio_bytes) = base64::engine::general_purpose::STANDARD.decode(b64_audio.trim()) {
                                                             let _ = output_tx.send(audio_bytes).await;
@@ -220,22 +275,36 @@ impl GeminiLiveStreamer {
                                     }
 
                                     // 2. Input transcription
-                                    if let Some(input_tx) = server_content.get("inputTranscription").and_then(|t| t.get("text")).and_then(|s| s.as_str()) {
-                                        let trimmed = input_tx.trim().to_string();
+                                    let input_trans = server_content
+                                        .get("inputTranscription")
+                                        .or_else(|| server_content.get("input_transcription"))
+                                        .and_then(|t| t.get("text"))
+                                        .and_then(|s| s.as_str());
+                                    if let Some(in_tx) = input_trans {
+                                        let trimmed = in_tx.trim().to_string();
                                         if !trimmed.is_empty() {
                                             original_text = Some(trimmed);
                                         }
                                     }
 
                                     // 3. Output transcription
-                                    if let Some(output_tx_str) = server_content.get("outputTranscription").and_then(|t| t.get("text")).and_then(|s| s.as_str()) {
-                                        let trimmed = output_tx_str.trim().to_string();
+                                    let output_trans = server_content
+                                        .get("outputTranscription")
+                                        .or_else(|| server_content.get("output_transcription"))
+                                        .and_then(|t| t.get("text"))
+                                        .and_then(|s| s.as_str());
+                                    if let Some(out_tx) = output_trans {
+                                        let trimmed = out_tx.trim().to_string();
                                         if !trimmed.is_empty() {
                                             translated_text = Some(trimmed);
                                         }
                                     }
 
-                                    let is_turn_complete = server_content.get("turnComplete").and_then(|tc| tc.as_bool()).unwrap_or(false);
+                                    let is_turn_complete = server_content
+                                        .get("turnComplete")
+                                        .or_else(|| server_content.get("turn_complete"))
+                                        .and_then(|tc| tc.as_bool())
+                                        .unwrap_or(false);
 
                                     if original_text.is_some() || translated_text.is_some() || is_turn_complete {
                                         let now_ms = SystemTime::now()

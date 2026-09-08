@@ -108,6 +108,23 @@ pub struct AudioAppInfo {
     pub media_name: Option<String>,
 }
 
+impl AudioAppInfo {
+    pub fn is_browser(&self) -> bool {
+        let app_lower = self.application_name.to_lowercase();
+        let bin_lower = self.binary_name.to_lowercase();
+        let media_lower = self.media_name.as_deref().unwrap_or("").to_lowercase();
+
+        const BROWSER_KEYWORDS: &[&str] = &[
+            "chrome", "firefox", "chromium", "brave", "msedge", "edge", "opera", "vivaldi",
+            "epiphany", "webkit", "zen", "youtube", "browser", "gecko",
+        ];
+
+        BROWSER_KEYWORDS.iter().any(|&k| {
+            app_lower.contains(k) || bin_lower.contains(k) || media_lower.contains(k)
+        })
+    }
+}
+
 /// Real-time transcript event emitted during live interpretation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveTranscriptUpdate {

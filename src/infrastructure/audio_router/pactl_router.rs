@@ -10,6 +10,9 @@ impl PactlAudioRouter {
     pub fn new() -> Self {
         Self
     }
+    pub fn is_browser_app(app: &AudioAppInfo) -> bool {
+        app.is_browser()
+    }
 }
 
 impl Default for PactlAudioRouter {
@@ -28,7 +31,7 @@ impl AudioRouter for PactlAudioRouter {
     }
 
     async fn create_null_sink(&self, sink_name: &str) -> Result<u32, DomainError> {
-        let desc_arg = format!("device.description=\"AudioDub_{}\"", sink_name);
+        let desc_arg = format!("sink_properties=device.description=\"AudioDub_{}\"", sink_name);
         let output = Command::new("pactl")
             .args([
                 "load-module",
@@ -188,6 +191,6 @@ impl AudioRouter for PactlAudioRouter {
             }
         }
 
-        Ok("@DEFAULT_SINK@".to_string())
+        Ok("default".to_string())
     }
 }
