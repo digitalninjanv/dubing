@@ -227,7 +227,8 @@ impl GeminiSynthesizer {
         })?;
         drop(file);
 
-        // Probe the segment duration
+        // Probe the segment duration (F4: only probe; aligner reuses this
+        // duration instead of re-probing). Keep a single probe here.
         let p = output_path.to_path_buf();
         let metadata = tokio::task::spawn_blocking(move || FfprobeInspector::probe(&p))
             .await

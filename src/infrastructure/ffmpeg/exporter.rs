@@ -1,6 +1,5 @@
 use super::probe::FfprobeInspector;
 use crate::domain::{AudioArtifact, AudioFormat, DomainError};
-use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -24,12 +23,16 @@ impl FfmpegExporter {
 
         let parent_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
         let _ = std::fs::create_dir_all(parent_dir);
-        let concat_list_path = parent_dir.join("concat_list.txt");
-
-        // Write concat list file
-        let mut list_file = File::create(&concat_list_path).map_err(|e| {
-            DomainError::ExportError(format!("Failed to create concat list: {}", e))
-        })?;
+        // F12: unique temp file per export to avoid races when two jobs
+        // export to the same parent dir concurrently.
+        let mut concat_list_file = tempfile::Builder::new()
+            .prefix("audiodub_concat_")
+            .suffix(".txt")
+            .tempfile_in(parent_dir)
+            .map_err(|e| {
+                DomainError::ExportError(format!("Failed to create concat list: {}", e))
+            })?;
+        let concat_list_path = concat_list_file.path().to_path_buf();
 
         for seg in segments {
             // Prefer canonical absolute paths for concat demuxer stability;
@@ -38,11 +41,14 @@ impl FfmpegExporter {
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| seg.to_string_lossy().into_owned());
             let path_str = abs.replace('\'', "'\\''");
-            writeln!(list_file, "file '{}'", path_str).map_err(|e| {
+            writeln!(concat_list_file, "file '{}'", path_str).map_err(|e| {
                 DomainError::ExportError(format!("Failed to write concat list: {}", e))
             })?;
         }
-        drop(list_file);
+        // Flush so ffmpeg sees the content; keep NamedTempFile alive until after ffmpeg.
+        concat_list_file
+            .flush()
+            .map_err(|e| DomainError::ExportError(format!("Failed to flush concat list: {}", e)))?;
 
         let mut cmd = Command::new("ffmpeg");
         cmd.arg("-y")
@@ -85,7 +91,7 @@ impl FfmpegExporter {
             DomainError::ExportError(format!("Failed to execute ffmpeg concat: {}", e))
         })?;
 
-        // Cleanup concat list
+        // Cleanup concat list (unique tempfile — remove by path)
         let _ = std::fs::remove_file(&concat_list_path);
 
         if !output.status.success() {

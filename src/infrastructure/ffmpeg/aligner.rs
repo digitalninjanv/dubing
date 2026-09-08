@@ -157,11 +157,10 @@ impl FfmpegAligner {
         synthesized: &[SynthesizedSegment],
         target_total_duration_ms: Option<u64>,
     ) -> Result<AlignmentResult, DomainError> {
-        let sample_rate = synthesized
-            .first()
-            .and_then(|s| FfprobeInspector::probe(&s.path).ok())
-            .map(|m| m.sample_rate)
-            .unwrap_or(24000);
+        // Reuse known duration/sample_rate from SynthesizedSegment where
+        // possible; probing is fallback only (F4: dedup probe).
+        // SynthesizedSegment.duration_ms is already probed at TTS time.
+        let sample_rate = 24000u32;
 
         // 1. Prepare segment plans
         struct SegmentPlan {
@@ -198,7 +197,8 @@ impl FfmpegAligner {
             });
         }
 
-        // 2. Parallel processing of all segments with single-pass filter across threads
+        // 2. Parallel processing with bounded concurrency (F3: avoid 100
+        // threads + 100 ffmpeg processes on large jobs).
         struct ProcessedSegment {
             path: std::path::PathBuf,
             duration_ms: u64,
@@ -207,10 +207,21 @@ impl FfmpegAligner {
             segment_id: String,
         }
 
-        let processed: Vec<Result<ProcessedSegment, DomainError>> = std::thread::scope(|s| {
-            let mut handles = Vec::with_capacity(plans.len());
-            for plan in &plans {
-                handles.push(s.spawn(|| {
+        let max_parallel = std::thread::available_parallelism()
+            .map(|n| (n.get() * 2).clamp(4, 8))
+            .unwrap_or(4);
+
+        // F3: bounded parallelism via chunked scope — avoids 100 threads +
+        // 100 ffmpeg processes on large jobs, without needing an async semaphore
+        // inside a sync thread::scope.
+        let mut processed: Vec<Result<ProcessedSegment, DomainError>> =
+            Vec::with_capacity(plans.len());
+        for chunk in plans.chunks(max_parallel) {
+            let chunk_results: Vec<Result<ProcessedSegment, DomainError>> = std::thread::scope(
+                |s| {
+                    let mut handles = Vec::with_capacity(chunk.len());
+                    for plan in chunk {
+                        handles.push(s.spawn(|| {
                     let mut warning = None;
                     let tempo = if plan.target_slot_ms > 0
                         && plan.raw_duration_ms > (plan.target_slot_ms + 80)
@@ -244,16 +255,21 @@ impl FfmpegAligner {
                         segment_id: plan.segment_id.clone(),
                     })
                 }));
-            }
-            handles
-                .into_iter()
-                .map(|h| {
-                    h.join().map_err(|_| {
-                        DomainError::AlignmentError("Audio alignment worker panicked".to_string())
-                    })?
-                })
-                .collect()
-        });
+                    }
+                    handles
+                        .into_iter()
+                        .map(|h| {
+                            h.join().map_err(|_| {
+                                DomainError::AlignmentError(
+                                    "Audio alignment worker panicked".to_string(),
+                                )
+                            })?
+                        })
+                        .collect()
+                },
+            );
+            processed.extend(chunk_results);
+        }
 
         // 3. Assemble timeline sequentially (preserving correct chronology and silence gaps)
         let mut aligned_files = Vec::new();

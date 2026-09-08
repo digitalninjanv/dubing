@@ -525,12 +525,11 @@ impl PipelineOrchestrator {
                     return Err(DomainError::Cancelled);
                 }
 
-                // Request pacing: gentle stagger between segment dispatches to avoid burst rate spikes
+                // Request pacing: token-bucket style — uniform small delay per
+                // segment avoids burst 429s without the odd 0/350/0/350 pattern
+                // that added ~10s dead time on 60 segments (F2).
                 if idx > 0 {
-                    let stagger_ms = ((idx % 2) as u64) * 350;
-                    if stagger_ms > 0 {
-                        tokio::time::sleep(std::time::Duration::from_millis(stagger_ms)).await;
-                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
                 }
 
                 let synth_result = synth
@@ -574,7 +573,14 @@ impl PipelineOrchestrator {
                 "Synthesized segment {} of {}",
                 job.progress.completed_segments, job.progress.total_segments
             );
-            self.job_repo.save(&job).await?;
+            // Persist progress periodically (every 5 segments + final) to
+            // avoid hundreds of job.json writes on large jobs (F2). Resume
+            // still works because seg_*.wav files are the source of truth.
+            if job.progress.completed_segments.is_multiple_of(5)
+                || job.progress.completed_segments == job.progress.total_segments
+            {
+                self.job_repo.save(&job).await?;
+            }
             on_progress(&job);
         }
 

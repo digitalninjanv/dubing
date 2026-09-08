@@ -308,19 +308,26 @@ impl TextTranslator for GeminiTranslator {
             }
         }
 
+        // F5: O(1) lookup via HashMap instead of O(n²) find loop.
+        let map: std::collections::HashMap<String, String> = raw_translations
+            .into_iter()
+            .filter_map(|t| {
+                let txt = t.translated_text.trim().to_string();
+                if txt.is_empty() {
+                    None
+                } else {
+                    Some((t.segment_id, txt))
+                }
+            })
+            .collect();
+
         let mut translated_segments = Vec::new();
 
         for source_seg in &transcript.segments {
-            let matched = raw_translations
-                .iter()
-                .find(|t| t.segment_id == source_seg.id);
-
-            let translated_text = match matched {
-                Some(t) if !t.translated_text.trim().is_empty() => {
-                    t.translated_text.trim().to_string()
-                }
-                _ => source_seg.text.clone(), // Fallback to source text if missing
-            };
+            let translated_text = map
+                .get(&source_seg.id)
+                .cloned()
+                .unwrap_or_else(|| source_seg.text.clone());
 
             translated_segments.push(TranslationSegment {
                 segment_id: source_seg.id.clone(),

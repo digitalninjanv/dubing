@@ -153,25 +153,35 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
         let mut input_transcripts: Vec<String> = Vec::new();
         let mut output_transcripts: Vec<String> = Vec::new();
 
-        // Chunking: 100ms chunks (3200 bytes at 16kHz 16-bit mono)
+        // Streaming chunking (F7): avoid Vec<Vec<u8>> 115MB peak for a
+        // 1-hour file. Stream directly from the buffered pcm_bytes via
+        // indexed slicing and real-time pacing (~100ms per 3200-byte chunk).
         const CHUNK_SIZE: usize = 3200;
-        let chunks: Vec<Vec<u8>> = pcm_bytes.chunks(CHUNK_SIZE).map(|c| c.to_vec()).collect();
-        let total_chunks = chunks.len();
+        let total_chunks = pcm_bytes.len().div_ceil(CHUNK_SIZE);
+        // Keep pcm_bytes in an Arc so the streamer task owns it without
+        // duplicating the allocation.
+        let pcm_shared = std::sync::Arc::new(pcm_bytes);
 
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel::<Option<Vec<u8>>>(32);
 
         // Spawn sender streamer
         let cancel_sender = cancel_token.clone();
+        let pcm_for_task = pcm_shared.clone();
         tokio::spawn(async move {
-            for chunk in chunks {
+            for idx in 0..total_chunks {
                 if cancel_sender.is_cancelled() {
                     break;
                 }
+                let start = idx * CHUNK_SIZE;
+                let end = (start + CHUNK_SIZE).min(pcm_for_task.len());
+                let chunk = pcm_for_task[start..end].to_vec();
                 if chunk_tx.send(Some(chunk)).await.is_err() {
                     break;
                 }
-                // Deliver smoothly at 40ms pacing between 100ms chunks
-                tokio::time::sleep(Duration::from_millis(40)).await;
+                // Real-time pacing ~90ms per 100ms chunk (slightly faster
+                // than wall-clock to drain without artificial 2.5× slowdown;
+                // the 40ms prior was 2.5× slower than realtime — F7).
+                tokio::time::sleep(Duration::from_millis(90)).await;
             }
             let _ = chunk_tx.send(None).await;
         });

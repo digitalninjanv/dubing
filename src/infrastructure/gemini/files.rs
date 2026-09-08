@@ -35,9 +35,15 @@ impl GeminiFilesApi {
         file_path: &Path,
         mime_type: &str,
     ) -> Result<GeminiFileInfo, DomainError> {
-        let file_bytes = tokio::fs::read(file_path).await.map_err(|e| {
-            DomainError::InvalidAudio(format!("Failed to read audio file for upload: {}", e))
+        // Validate file exists and is non-empty without loading it fully into RAM.
+        let meta = tokio::fs::metadata(file_path).await.map_err(|e| {
+            DomainError::InvalidAudio(format!("Failed to stat audio file for upload: {}", e))
         })?;
+        if meta.len() == 0 {
+            return Err(DomainError::InvalidAudio(
+                "Audio file is empty (0 bytes)".to_string(),
+            ));
+        }
 
         let url = format!(
             "{}/upload/v1beta/files?key={}",
@@ -60,40 +66,112 @@ impl GeminiFilesApi {
             .to_string();
 
         let mime_string = mime_type.to_string();
+        let path_owned = file_path.to_path_buf();
 
-        let response = self
-            .client
-            .post_with_retry("Gemini File Upload", || {
-                let bytes = file_bytes.clone();
-                let name = file_name.clone();
-                let mime = mime_string.clone();
-                let hdrs = headers.clone();
-                let target_url = url.clone();
-
-                let http_client = self.client.http().clone();
-                async move {
-                    let form = reqwest::multipart::Form::new()
-                        .text(
-                            "metadata",
-                            format!(r#"{{"file": {{"displayName": "{}"}}}}"#, name),
-                        )
-                        .part(
-                            "file",
-                            reqwest::multipart::Part::bytes(bytes)
-                                .file_name(name)
-                                .mime_str(&mime)
-                                .unwrap_or_else(|_| reqwest::multipart::Part::bytes(Vec::new())),
-                        );
-
-                    http_client
-                        .post(&target_url)
-                        .headers(hdrs)
-                        .multipart(form)
-                        .send()
-                        .await
+        // Streaming upload with manual retry (F1): reopen file per attempt
+        // via ReaderStream -> Part::stream, avoiding a full clone of the
+        // file buffer on every retry (reqwest docs: seanmonstar/reqwest
+        // stream file upload). We retry via the client's backoffs.
+        let backoffs = [3u64, 8, 15, 25, 35];
+        let mut last_err: Option<crate::domain::DomainError> = None;
+        let mut response_opt: Option<reqwest::Response> = None;
+        for (attempt, delay_secs) in backoffs.iter().enumerate() {
+            let file = match tokio::fs::File::open(&path_owned).await {
+                Ok(f) => f,
+                Err(e) => {
+                    return Err(crate::domain::DomainError::InvalidAudio(format!(
+                        "Failed to open audio file for upload: {}",
+                        e
+                    )))
                 }
+            };
+            let stream = tokio_util::io::ReaderStream::new(file);
+            let body = reqwest::Body::wrap_stream(stream);
+            let part = reqwest::multipart::Part::stream(body)
+                .file_name(file_name.clone())
+                .mime_str(&mime_string)
+                .unwrap_or_else(|_| reqwest::multipart::Part::stream(reqwest::Body::from(vec![])));
+            let form = reqwest::multipart::Form::new()
+                .text(
+                    "metadata",
+                    format!(r#"{{"file": {{"displayName": "{}"}}}}"#, file_name),
+                )
+                .part("file", part);
+            let res = self
+                .client
+                .http()
+                .post(&url)
+                .headers(headers.clone())
+                .multipart(form)
+                .send()
+                .await;
+            match res {
+                Ok(resp) if resp.status().is_success() => {
+                    response_opt = Some(resp);
+                    break;
+                }
+                Ok(resp)
+                    if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
+                        || resp.status().is_server_error() =>
+                {
+                    let status = resp.status();
+                    tracing::warn!(
+                        "Gemini File Upload retryable status {} on attempt {}/{}; waiting {}s",
+                        status,
+                        attempt + 1,
+                        backoffs.len(),
+                        delay_secs
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(*delay_secs)).await;
+                    last_err = Some(crate::domain::DomainError::TransientError(format!(
+                        "Gemini File Upload status {}",
+                        status
+                    )));
+                    continue;
+                }
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    let snip = if body.len() > 600 {
+                        format!("{}… ({} bytes truncated)", &body[..600], body.len() - 600)
+                    } else {
+                        body
+                    };
+                    return Err(crate::domain::DomainError::PermanentApiError(format!(
+                        "File upload failed with status {}: {}",
+                        status, snip
+                    )));
+                }
+                Err(e) if e.is_timeout() || e.is_connect() => {
+                    tracing::warn!(
+                        "File upload network error on attempt {}/{}: {}; retrying in {}s",
+                        attempt + 1,
+                        backoffs.len(),
+                        e,
+                        delay_secs
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(*delay_secs)).await;
+                    last_err = Some(crate::domain::DomainError::TransientError(format!(
+                        "upload network: {}",
+                        e
+                    )));
+                    continue;
+                }
+                Err(e) => {
+                    return Err(crate::domain::DomainError::PermanentApiError(format!(
+                        "upload failed: {}",
+                        e
+                    )));
+                }
+            }
+        }
+        let response = response_opt.ok_or_else(|| {
+            last_err.unwrap_or_else(|| {
+                crate::domain::DomainError::TransientError(
+                    "File upload max retries exceeded".to_string(),
+                )
             })
-            .await?;
+        })?;
 
         let parsed: GeminiFileResponse = response.json().await.map_err(|e| {
             DomainError::PermanentApiError(format!("Failed to parse upload response: {}", e))

@@ -12,6 +12,7 @@ struct FfprobeFormat {
 #[derive(Debug, Deserialize)]
 struct FfprobeStream {
     codec_name: Option<String>,
+    codec_type: Option<String>,
     sample_rate: Option<String>,
     channels: Option<u16>,
 }
@@ -34,11 +35,12 @@ impl FfprobeInspector {
         }
 
         // Run ffprobe structured without shell interpolation
+        // Include codec_type so we can prefer audio streams (F11).
         let output = Command::new("ffprobe")
             .arg("-v")
             .arg("error")
             .arg("-show_entries")
-            .arg("format=duration,bit_rate:stream=codec_name,sample_rate,channels")
+            .arg("format=duration,bit_rate:stream=codec_name,codec_type,sample_rate,channels")
             .arg("-of")
             .arg("json")
             .arg(path)
@@ -62,11 +64,31 @@ impl FfprobeInspector {
             DomainError::InvalidAudio(format!("Failed to parse ffprobe json output: {}", e))
         })?;
 
+        // F11: prefer audio stream; fallback to first stream if none tagged.
         let stream = parsed.streams.and_then(|mut s| {
-            if !s.is_empty() {
-                Some(s.remove(0))
+            if s.is_empty() {
+                return None;
+            }
+            // Prefer streams with codec_type == "audio" and highest sample_rate.
+            let mut best_idx: Option<usize> = None;
+            let mut best_rate: u32 = 0;
+            for (i, st) in s.iter().enumerate() {
+                if st.codec_type.as_deref() == Some("audio") {
+                    let rate = st
+                        .sample_rate
+                        .as_deref()
+                        .and_then(|r| r.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    if best_idx.is_none() || rate > best_rate {
+                        best_idx = Some(i);
+                        best_rate = rate;
+                    }
+                }
+            }
+            if let Some(idx) = best_idx {
+                Some(s.remove(idx))
             } else {
-                None
+                Some(s.remove(0))
             }
         });
 

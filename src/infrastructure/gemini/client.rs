@@ -2,6 +2,7 @@ use crate::domain::DomainError;
 use reqwest::{Client, Response, StatusCode};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 pub type RetryStatusCallback = Arc<dyn Fn(&str) + Send + Sync>;
@@ -121,10 +122,27 @@ impl GeminiClient {
         Ok(model_names)
     }
 
+    /// Retry with optional cancellation (F10). When a token is supplied,
+    /// the per-second countdown uses `select!` so a user Cancel resolves
+    /// instantly instead of waiting the full 3–35s backoff.
     pub async fn post_with_retry<F, Fut>(
         &self,
         operation_name: &str,
         make_request: F,
+    ) -> Result<Response, DomainError>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<Response, reqwest::Error>>,
+    {
+        self.post_with_retry_cancel(operation_name, make_request, None)
+            .await
+    }
+
+    pub async fn post_with_retry_cancel<F, Fut>(
+        &self,
+        operation_name: &str,
+        make_request: F,
+        cancel: Option<CancellationToken>,
     ) -> Result<Response, DomainError>
     where
         F: Fn() -> Fut,
@@ -190,6 +208,11 @@ impl GeminiClient {
                         if total_sleep_ms > 0 {
                             let mut remaining_ms = total_sleep_ms;
                             while remaining_ms > 0 {
+                                if let Some(ref tok) = cancel {
+                                    if tok.is_cancelled() {
+                                        return Err(DomainError::Cancelled);
+                                    }
+                                }
                                 let remaining_secs = remaining_ms.div_ceil(1000);
                                 if let Some(ref cb) = self.status_callback {
                                     cb(&format!(
@@ -198,7 +221,14 @@ impl GeminiClient {
                                     ));
                                 }
                                 let step = remaining_ms.min(1000);
-                                tokio::time::sleep(Duration::from_millis(step)).await;
+                                if let Some(ref tok) = cancel {
+                                    tokio::select! {
+                                        _ = tok.cancelled() => return Err(DomainError::Cancelled),
+                                        _ = tokio::time::sleep(Duration::from_millis(step)) => {},
+                                    }
+                                } else {
+                                    tokio::time::sleep(Duration::from_millis(step)).await;
+                                }
                                 remaining_ms = remaining_ms.saturating_sub(step);
                             }
 
@@ -219,11 +249,17 @@ impl GeminiClient {
                         continue;
                     }
 
-                    // Permanent 4xx client errors
+                    // Permanent 4xx client errors — truncate body to avoid
+                    // leaking large transcripts/prompts into logs (F10).
                     let body = response.text().await.unwrap_or_default();
+                    let body_snip = if body.len() > 600 {
+                        format!("{}… ({} bytes truncated)", &body[..600], body.len() - 600)
+                    } else {
+                        body
+                    };
                     return Err(DomainError::PermanentApiError(format!(
                         "API request failed with status {}: {}",
-                        status, body
+                        status, body_snip
                     )));
                 }
                 Err(err) => {
@@ -237,6 +273,11 @@ impl GeminiClient {
                         if total_sleep_ms > 0 {
                             let mut remaining_ms = total_sleep_ms;
                             while remaining_ms > 0 {
+                                if let Some(ref tok) = cancel {
+                                    if tok.is_cancelled() {
+                                        return Err(DomainError::Cancelled);
+                                    }
+                                }
                                 let remaining_secs = remaining_ms.div_ceil(1000);
                                 if let Some(ref cb) = self.status_callback {
                                     cb(&format!(
@@ -245,7 +286,14 @@ impl GeminiClient {
                                     ));
                                 }
                                 let step = remaining_ms.min(1000);
-                                tokio::time::sleep(Duration::from_millis(step)).await;
+                                if let Some(ref tok) = cancel {
+                                    tokio::select! {
+                                        _ = tok.cancelled() => return Err(DomainError::Cancelled),
+                                        _ = tokio::time::sleep(Duration::from_millis(step)) => {},
+                                    }
+                                } else {
+                                    tokio::time::sleep(Duration::from_millis(step)).await;
+                                }
                                 remaining_ms = remaining_ms.saturating_sub(step);
                             }
 

@@ -289,14 +289,33 @@ Respond with ONLY a valid JSON object matching this schema:
         audio: &AudioDocument,
         source_hint: &LanguageId,
     ) -> Result<Transcript, DomainError> {
+        // Guard: inline path is only for files <20MB (caller checks), but
+        // re-validate here to avoid accidental 500MB base64 in RAM.
+        let meta = tokio::fs::metadata(&audio.path).await.map_err(|e| {
+            DomainError::InvalidAudio(format!(
+                "Failed to stat audio file for inline transcribe: {}",
+                e
+            ))
+        })?;
+        if meta.len() == 0 {
+            return Err(DomainError::InvalidAudio("Audio file is empty".to_string()));
+        }
+        if meta.len() > 20 * 1024 * 1024 {
+            return Err(DomainError::InvalidAudio(
+                "File too large for inline transcribe (use Files API)".to_string(),
+            ));
+        }
         let file_bytes = tokio::fs::read(&audio.path).await.map_err(|e| {
             DomainError::InvalidAudio(format!(
                 "Failed to read audio file for inline transcribe: {}",
                 e
             ))
         })?;
-
+        // Streaming base64 would be ideal; inline is limited to <20MB so a
+        // single encode is bounded (~27MB) and avoids extra complexity.
         let b64_audio = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
+        // Drop raw bytes promptly before building the large JSON body.
+        drop(file_bytes);
         let models = ["gemini-3.5-flash", "gemini-2.5-flash"];
         let mut last_err = None;
 

@@ -130,7 +130,10 @@ impl AudioStreamCapture {
                     read_res = stdout.read_exact(&mut buf) => {
                         match read_res {
                             Ok(_) => {
-                                if chunk_tx.send(buf.clone()).await.is_err() {
+                                // Move buffer without clone (F6): take filled buf and
+                                // replace with a fresh allocation.
+                                let filled = std::mem::replace(&mut buf, vec![0u8; CHUNK_SIZE]);
+                                if chunk_tx.send(filled).await.is_err() {
                                     debug!("Capture consumer closed");
                                     break;
                                 }

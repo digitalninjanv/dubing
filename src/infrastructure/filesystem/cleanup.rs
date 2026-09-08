@@ -5,7 +5,7 @@ use std::path::Path;
 pub struct CleanupManager;
 
 impl CleanupManager {
-    /// Cleans up temporary segment audio files (*.wav, *.mp3 segment chunks) in the job directory
+    /// Cleans up temporary segment audio files and intermediate artifacts in the job directory (F8).
     pub fn cleanup_temp_segments(job_dir: &Path) {
         if let Ok(entries) = fs::read_dir(job_dir) {
             for entry in entries.flatten() {
@@ -13,8 +13,18 @@ impl CleanupManager {
                 if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                     if file_name.starts_with("seg_")
                         || file_name.starts_with("align_")
-                        || file_name.ends_with(".tmp")
+                        || file_name.starts_with("silence_")
+                        || file_name.starts_with("ducked_")
+                        || file_name.starts_with("dubbed_")
+                        || file_name == "extracted_source_audio.mp3"
+                        || file_name == "input_16k.pcm"
+                        || file_name == "output_24k.pcm"
+                        || file_name == "input.pcm"
+                        || file_name == "output.pcm"
                         || file_name == "concat_list.txt"
+                        || file_name.ends_with(".tmp")
+                        || file_name == "transcript.json.tmp"
+                        || file_name == "translated.json.tmp"
                     {
                         let _ = fs::remove_file(&path);
                     }
