@@ -3,6 +3,7 @@ pub mod batch;
 pub mod errors;
 pub mod job;
 pub mod language;
+pub mod live_dubber;
 pub mod subtitle;
 pub mod synthesis;
 pub mod transcript;
@@ -13,6 +14,9 @@ pub use batch::{BatchItem, BatchItemStatus, BatchJob};
 pub use errors::DomainError;
 pub use job::{DubbingEngine, Job, JobId, JobProgress, PipelineStage};
 pub use language::{LanguageId, LanguageInfo, LanguageRegistry};
+pub use live_dubber::{
+    AudioAppInfo, AudioSourceMode, LiveDubberStatus, LiveModelChoice, LiveTranscriptUpdate,
+};
 pub use subtitle::{
     format_timestamp_srt, format_timestamp_vtt, generate_bilingual_txt, generate_srt, generate_vtt,
     SubtitleFormat,

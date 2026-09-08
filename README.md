@@ -17,7 +17,7 @@ Aplikasi ini menggabungkan kecerdasan multimodal Google Gemini terbaru (`gemini-
 ## 📑 Daftar Isi
 
 - [🚀 Instalasi Cepat 1 Baris (Universal Linux)](#-instalasi-cepat-1-baris-universal-linux)
-- [✨ Fitur Unggulan (v0.3.12)](#-fitur-unggulan-v0312)
+- [✨ Fitur Unggulan (v0.4.0)](#-fitur-unggulan-v040)
 - [🏛️ Arsitektur Heksagonal & Alur Kerja](#️-arsitektur-heksagonal--alur-kerja)
 - [🤖 Matriks Model Google Gemini](#-matriks-model-google-gemini)
 - [💻 Panduan Penggunaan](#-panduan-penggunaan)
@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 
 ---
 
-## ✨ Fitur Unggulan (v0.3.12)
+## ✨ Fitur Unggulan (v0.4.0)
 
 ### 🎙️ 1. Studio Multimodal Audio & Video Dubbing
 - **Dukungan Format Luas:** Menerima input audio (`MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus`) dan kontainer video (`MP4, MKV, MOV, WebM`) hingga ukuran **4 GB**.
@@ -90,6 +90,17 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 - Memproduksi suara manusia sintetis langsung dari teks bebas tanpa berkas sumber.
 - Mendukung *Custom Style Directive* (arahan emosi dan gaya bicara bebas, misal: *"Bicara dengan nada berbisik, misterius, dan dramatis"*).
 - Kendali kecepatan berbicara (0.8× santai hingga 1.3× cepat) dengan pemutar audio dan ekspor MP3 instan.
+
+### 🔴 8. Live Stream Dubber (YouTube & Desktop Audio Tanpa Berkas)
+- **Zero Disk I/O (100% In-Memory):** Tidak memerlukan download atau simpan berkas di disk. Menangkap langsung audio yang sedang diputar di browser (YouTube, Twitch, berita luar negeri) atau mikrofon.
+- **Peredam Suara Asli Otomatis (*Virtual Null-Sink Isolation*):** Membuat virtual sink audio Linux (`module-null-sink`) secara otomatis. Suara asli bahasa Inggris dibungkam dari speaker fisik Anda, tetapi disadap secara internal oleh AudioDub AI.
+- **Streaming Dua Arah (Bi-directional WebSocket):** Terhubung langsung ke endpoint resmi `wss://generativelanguage.googleapis.com/.../BidiGenerateContent`. Mengirim potongan PCM 16 kHz (100 ms) dan menerima potongan suara PCM 24 kHz secara simultan.
+- **Model Primer & Fallback Cerdas:**
+  - **Primer:** `gemini-3.5-live-translate-preview` (khusus interpretasi simultan speech-to-speech).
+  - **Cadangan (Fallback):** `gemini-3.1-flash-live-preview` & `gemini-2.5-flash-preview-native-audio-dialog`.
+  - **Subtitles Only:** `gemini-3.5-transcribe-live` untuk closed captions langsung di layar.
+- **Latensi Ultra-Rendah:** Hasil dubbing terdengar di speaker hanya dalam **~600 ms – 800 ms** secara alami layaknya penerjemah simultan internasional.
+- **Live Subtitle & CC Display:** Menampilkan naskah asli bahasa asing dan naskah terjemahan secara berdampingan (*side-by-side*) secara real-time.
 
 ---
 
@@ -165,8 +176,9 @@ graph TD
 | **Terjemahan Teks** | `gemini-3.1-flash-lite` | `POST /v1beta/models/...:generateContent` | Structured JSON mode, alokasi timing budget per segmen, gaya bahasa dinamis. |
 | **Sintesis Suara (Primer)** | `gemini-3.1-flash-tts-preview` | `POST /v1beta/models/...:generateContent` | Native 24 kHz audio, multi-speaker profiling. |
 | **Sintesis Suara (Fallback 1)** | `gemini-2.5-flash-preview-tts` | `POST /v1beta/models/...:generateContent` | Otomatis aktif jika kuota model primer habis / rate limited. |
-| **Sintesis Suara (Fallback 2)** | `gemini-2.5-pro-preview-tts` | `POST /v1beta/models/...:generateContent` | Fallback tingkat tinggi untuk kualitas suara premium. |
-| **Live Translation** | `gemini-3.5-live-translate-preview` | `POST /v1beta/models/...:generateContent` | Dubbing kilat langsung dari audio ke audio. |
+| **Live Translation (Primary S2S)** | `gemini-3.5-live-translate-preview` | `WSS .../BidiGenerateContent` | Real-time speech-to-speech interpretation langsung ke speaker tanpa file. |
+| **Live Interpretation (Fallback)** | `gemini-3.1-flash-live-preview` | `WSS .../BidiGenerateContent` | Conversational live streaming fallback dengan prompt penerjemah simultan. |
+| **Live Subtitles (STT Only)** | `gemini-3.5-transcribe-live` | `WSS .../BidiGenerateContent` | Real-time audio-to-text streaming untuk closed captions instan. |
 | **Validasi Koneksi** | *Management Endpoint* | `GET /v1beta/models?key=...` | Zero-token validation untuk menguji keabsahan API Key. |
 
 ---

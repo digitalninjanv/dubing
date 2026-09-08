@@ -1,4 +1,5 @@
 pub mod audio_engine;
+pub mod audio_router;
 pub mod job_repository;
 pub mod live_translator;
 pub mod secret_store;
@@ -7,6 +8,7 @@ pub mod transcriber;
 pub mod translator;
 
 pub use audio_engine::AudioEngine;
+pub use audio_router::AudioRouter;
 pub use job_repository::JobRepository;
 pub use live_translator::{LiveSpeechTranslator, LiveTranslationResult};
 pub use secret_store::SecretStore;

@@ -1,6 +1,6 @@
 use super::views::{
-    DropzoneView, HistoryView, ProgressView, ResultView, ReviewTranscriptView, SettingsDialog,
-    TtsStudioView,
+    DropzoneView, HistoryView, LiveDubberView, ProgressView, ResultView, ReviewTranscriptView,
+    SettingsDialog, TtsStudioView,
 };
 use crate::application::pipeline::ReviewRequest;
 use crate::application::ports::{AudioEngine, JobRepository, SecretStore};
@@ -59,6 +59,7 @@ impl MainWindow {
         dubbing_stack.set_hexpand(true);
 
         let dropzone_view = DropzoneView::new(&registry);
+        let live_dubber_view = LiveDubberView::new(&registry);
         let progress_view = ProgressView::new();
         let review_view = ReviewTranscriptView::new();
         let result_view = ResultView::new();
@@ -87,6 +88,12 @@ impl MainWindow {
             "media-record-symbolic",
         );
         main_stack.add_titled_with_icon(
+            live_dubber_view.widget(),
+            Some("live"),
+            "Live Dubber",
+            "network-transmit-receive-symbolic",
+        );
+        main_stack.add_titled_with_icon(
             tts_view.widget(),
             Some("tts"),
             "TTS Studio",
@@ -97,6 +104,15 @@ impl MainWindow {
             Some("history"),
             "History",
             "document-open-recent-symbolic",
+        );
+
+        // Setup Live Dubber events and lifecycle
+        live_dubber_view.setup_events(
+            secret_store.clone(),
+            settings.clone(),
+            registry.clone(),
+            window.clone(),
+            toast_overlay.clone(),
         );
 
         // Top-level ViewSwitcher in HeaderBar for modern Adwaita workflow
