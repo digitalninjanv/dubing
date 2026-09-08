@@ -1,6 +1,6 @@
 use crate::domain::DomainError;
 use std::process::Stdio;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -14,10 +14,6 @@ impl AudioStreamCapture {
     /// Linux-first strategy:
     /// 1. Prefer PipeWire's native `pw-cat` when available.
     /// 2. Fall back to FFmpeg's PulseAudio interface for older/minimal systems.
-    ///
-    /// `pw-cat` is deliberately used as a long-lived realtime stream rather than spawning
-    /// FFmpeg for the audio transport. This avoids FFmpeg probing/buffering and works directly
-    /// with PipeWire/PipeWire-Pulse graphs.
     pub async fn start_capture(
         source_name: &str,
         chunk_tx: Sender<Vec<u8>>,
@@ -42,13 +38,8 @@ impl AudioStreamCapture {
         let mut child = if use_pw_cat {
             Command::new("pw-cat")
                 .args([
-                    "--record",
-                    "--raw",
-                    "--rate", "16000",
-                    "--channels", "1",
-                    "--format", "s16",
-                    "--target", effective_source,
-                    "-",
+                    "--record", "--raw", "--rate", "16000", "--channels", "1",
+                    "--format", "s16", "--target", effective_source, "-",
                 ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -57,11 +48,10 @@ impl AudioStreamCapture {
         } else {
             Command::new("ffmpeg")
                 .args([
-                    "-hide_banner", "-loglevel", "error",
-                    "-fflags", "nobuffer", "-flags", "low_delay",
-                    "-f", "pulse", "-i", effective_source,
-                    "-vn", "-f", "s16le", "-acodec", "pcm_s16le",
-                    "-ac", "1", "-ar", "16000", "-flush_packets", "1", "-",
+                    "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
+                    "-flags", "low_delay", "-f", "pulse", "-i", effective_source,
+                    "-vn", "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1",
+                    "-ar", "16000", "-flush_packets", "1", "-",
                 ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -89,7 +79,7 @@ impl AudioStreamCapture {
         let mut stderr = child.stderr.take();
 
         tokio::spawn(async move {
-            const CHUNK_SIZE: usize = 3200; // 100 ms @ 16 kHz / s16 / mono
+            const CHUNK_SIZE: usize = 3200;
             let mut buf = vec![0u8; CHUNK_SIZE];
 
             loop {
