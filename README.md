@@ -1,30 +1,48 @@
 # AudioDub AI — Universal Linux Audio & Video Dubbing and TTS Studio
 
+[![Release](https://img.shields.io/github/v/release/digitalninjanv/dubing?include_prereleases&label=Release&color=blue)](https://github.com/digitalninjanv/dubing/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 [![GUI](https://img.shields.io/badge/GUI-GTK4%20%2B%20Libadwaita-blue.svg)](https://gtk.org)
 [![Platform](https://img.shields.io/badge/Platform-Universal%20Linux-brightgreen.svg)](https://github.com/digitalninjanv/dubing)
-[![Release](https://img.shields.io/github/v/release/digitalninjanv/dubing?include_prereleases&label=Release&color=blue)](https://github.com/digitalninjanv/dubing/releases)
+[![Clippy](https://img.shields.io/badge/Clippy-0%20Warnings-success.svg)](https://github.com/digitalninjanv/dubing)
+[![Tests](https://img.shields.io/badge/Tests-100%25%20Passing-success.svg)](https://github.com/digitalninjanv/dubing)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**AudioDub AI** adalah aplikasi desktop Linux modern (*GTK4 + Libadwaita + Rust*) berperforma tinggi yang dirancang untuk menerjemahkan audio/video, melakukan *voice dubbing* otomatis dengan sinkronisasi waktu presisi (*isochronous dubbing*), serta memproduksi suara sintetis ekspresif via **TTS Studio**.
+**AudioDub AI** adalah aplikasi desktop Linux modern (*GTK4 + Libadwaita + Rust*) berkinerja tinggi yang dirancang untuk penerjemahan berkas audio dan video, *voice dubbing* otomatis dengan sinkronisasi waktu presisi (*isochronous dubbing*), peredaman musik latar (*audio ducking*), penyematan subtitle otomatis (*soft subtitles*), serta produksi suara sintetis ekspresif melalui **TTS Studio**.
 
-Aplikasi ini menggabungkan kecerdasan multimodal Google Gemini terbaru dengan pemrosesan audio lokal deterministik via FFmpeg, menghasilkan dubbing yang terdengar natural, tepat waktu, dan bebas distorsi.
+Aplikasi ini menggabungkan kecerdasan multimodal Google Gemini terbaru (`gemini-3.5-transcribe`, `gemini-3.1-flash-lite`, `gemini-3.1-flash-tts-preview`, `gemini-3.5-live-translate-preview`) dengan pemrosesan audio/video lokal deterministik via FFmpeg, menghasilkan hasil dubbing yang natural, tepat waktu, dan bebas distorsi.
+
+---
+
+## 📑 Daftar Isi
+
+- [🚀 Instalasi Cepat 1 Baris (Universal Linux)](#-instalasi-cepat-1-baris-universal-linux)
+- [✨ Fitur Unggulan (v0.3.12)](#-fitur-unggulan-v0312)
+- [🏛️ Arsitektur Heksagonal & Alur Kerja](#️-arsitektur-heksagonal--alur-kerja)
+- [🤖 Matriks Model Google Gemini](#-matriks-model-google-gemini)
+- [💻 Panduan Penggunaan](#-panduan-penggunaan)
+  - [1. Antarmuka Grafis Desktop (GUI)](#1-antarmuka-grafis-desktop-gui)
+  - [2. Antarmuka Baris Perintah (CLI Companion)](#2-antarmuka-baris-perintah-cli-companion)
+- [🛠️ Kompilasi dari Kode Sumber (Build from Source)](#️-kompilasi-dari-kode-sumber-build-from-source)
+- [⚙️ Konfigurasi & Penyimpanan Sandi](#️-konfigurasi--penyimpanan-sandi)
+- [🧪 Pengujian & Verifikasi Kualitas](#-pengujian--verifikasi-kualitas)
+- [📄 Lisensi](#-lisensi)
 
 ---
 
 ## 🚀 Instalasi Cepat 1 Baris (Universal Linux)
 
-AudioDub AI menyediakan skrip instalasi universal tanpa `sudo` (*rootless*) yang dapat dijalankan di seluruh distribusi Linux modern (Ubuntu, Debian, Fedora, Arch Linux, Pop!_OS, Linux Mint, openSUSE, dll.).
+AudioDub AI menyediakan skrip instalasi universal tanpa `sudo` (*rootless*) yang dapat dijalankan di seluruh distribusi Linux modern (**Ubuntu, Debian, Fedora, Arch Linux, Pop!_OS, Linux Mint, openSUSE, RHEL/AlmaLinux**, dll.).
 
-Skrip ini otomatis memverifikasi SHA-256 checksum, memasang binary ke `~/.local/bin`, serta mengintegrasikan launcher `.desktop` dan ikon SVG ke menu aplikasi sistem:
+Skrip ini otomatis memverifikasi rilis terbaru dari GitHub, mengunduh binary terkompilasi, memasang ke `~/.local/bin`, serta mendaftarkan file `.desktop` dan ikon SVG ke menu aplikasi sistem:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash
 ```
 
-> **Untuk menginstal versi rilis tertentu:**
+> **Untuk menginstal versi spesifik:**
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --version v0.3.3
+> curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --version v0.3.12
 > ```
 
 > **Untuk uninstall bersih kapan saja:**
@@ -34,108 +52,122 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 
 ---
 
-## ⚡ Apa yang Baru di v0.3.3 (High-Speed Accelerated Pipeline)
+## ✨ Fitur Unggulan (v0.3.12)
 
-Pada versi **v0.3.3**, pipeline pemrosesan mengalami perombakan arsitektur sehingga berjalan **~3.2x lebih cepat** tanpa mengorbankan kualitas suara, stabilitas, atau akurasi waktu:
+### 🎙️ 1. Studio Multimodal Audio & Video Dubbing
+- **Dukungan Format Luas:** Menerima input audio (`MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus`) dan kontainer video (`MP4, MKV, MOV, WebM`) hingga ukuran **4 GB**.
+- **⚡ Ultra-Fast Local Audio Pre-Extraction:** Untuk berkas video berukuran ratusan MB atau beberapa GB, AudioDub AI mengekstrak trek audio ringan (128 kbps 24 kHz mono MP3) secara lokal dalam **< 1 detik**, memangkas waktu unggah ke Google API dari ~5 menit menjadi seketika.
+- **Dual Dubbing Engine:**
+  - **Studio Multi-Stage:** Alur produksi lengkap dengan diarization transkripsi, terjemahan terstruktur, sintesis suara paralel, dan penyelarasan tempo.
+  - **Live Fast Translate:** Menggunakan model `gemini-3.5-live-translate-preview` untuk proses kilat satu tahap.
+- **Speaker Diarization & 5-Voice Assignment:** Mengenali pergantian pembicara dan menyediakan alokasi suara aktor terpisah untuk Pembicara 1 dan Pembicara 2 dari roster lengkap 5 suara resmi Gemini: **Kore, Puck, Aoede, Charon, Fenrir**.
+- **Penyelarasan Waktu Presisi (*Isochronous Sync*):** Menyeimbangkan kuota karakter terjemahan, kompresi tempo cerdas via filter FFmpeg `atempo` (maksimal 1.25×), dan penyisipan jeda hening alami (*silence padding*).
 
-- **Dual-Mode Ingestion (Inline Audio Fast-Path):** Berkas media berukuran `< 20MB` langsung diproses menggunakan Base64 `inline_data` langsung ke model `gemini-2.5-flash`, melewati overhead Files API dan memangkas 100% loop polling 1.5 detik.
-- **True Concurrent TTS Synthesis:** Sintesis suara segmen ucapan diproses secara paralel (`buffer_unordered(4)`) melalui koneksi multiplexing HTTP/2, memangkas waktu tunggu TTS segmen jamak hingga **~74%**.
-- **Single-Pass Parallel FFmpeg Alignment:** Filter *silence removal* dan *dynamic time-stretching* disatukan ke dalam satu proses FFmpeg tunggal dan dialirkan secara paralel ke seluruh thread prosesor via `std::thread::scope`.
-- **Tuned Connection Pooling:** HTTP/2 adaptive windowing, TCP keep-alive (60s), dan persistent connection pool meminimalisir latensi TLS handshake berulang.
+### 🎵 2. Background Music (BGM) & Audio Ducking
+- **Peredaman Dinamis Terintegrasi:** Menggunakan filtergraph audio profesional FFmpeg `sidechaincompress` + `amix` dengan proteksi `apad`.
+- Saat suara dubbing berbicara, audio latar/musik asli secara otomatis diredam sebesar **~14 dB**.
+- Pada jeda percakapan atau hening, musik latar kembali naik secara halus (*smooth release*), mempertahankan atmosfer dan musik latar video tanpa kesan hampa.
 
-### 📊 Benchmark Sebelum vs Sesudah (10 Segmen / ~20 Detik Audio)
+### 🎬 3. Soft Subtitles (Closed Captions) Tertanam di Kontainer Video
+- **Subtitle Internal Kontainer:** Menyematkan berkas `.srt` langsung ke dalam stream video MP4/MOV (`-c:s mov_text`) dan MKV/WebM (`-c:s srt`).
+- **Tagging ISO 639-2:** Dilengkapi metadata bahasa target resmi (misal: `ind`, `eng`, `jpn`, `spa`).
+- Subtitle dapat diaktifkan atau dinonaktifkan secara bebas (*toggleable CC*) di pemutar media seperti VLC, Totem / GNOME Videos, QuickTime, serta ponsel Android & iOS.
+- Otomatis menghasilkan berkas teks terpisah: **`.srt`**, **`.vtt`**, dan naskah bilingual paralel **`.txt`** di folder output.
 
-| Tahapan Pipeline | Waktu Sebelum Optimasi | Waktu Sesudah Optimasi (v0.3.3) | Peningkatan | Keterangan |
-| :--- | :---: | :---: | :---: | :--- |
-| **1. Validation** | 0.05s | 0.05s | 1.0x | Fast `ffprobe` integrity check |
-| **2. Transcription** | 10.50s | 2.15s | **~4.9x** | Inline Base64 Fast-Path (bypass Files API & polling) |
-| **3. Translation** | 3.20s | 1.75s | **~1.8x** | HTTP/2 multiplexing & parallel chunk processing |
-| **4. Speech Synthesis** | 20.00s | 5.25s | **~3.8x** | `buffer_unordered(4)` True Concurrency |
-| **5. FFmpeg Alignment** | 4.66s | 2.34s | **~2.0x** | Single-pass combined filter + `thread::scope` multicore |
-| **6. Export & Subtitles** | 1.20s | 0.88s | **~1.4x** | Concat demuxer & subtitle generation |
-| **TOTAL WALL TIME** | **~39.61s** | **~12.42s** | **~3.2x** | **Memangkas ~68.7% Waktu Eksekusi Total** |
+### 📝 4. Interactive Review & Edit Transcript Checkpoint (Human-in-the-Loop)
+- **Koreksi Teks Pra-Sintesis:** Opsi untuk menghentikan alur sementara (*asynchronous pause*) setelah tahap penerjemahan selesai.
+- Pengguna dapat memeriksa naskah terjemahan per segmen waktu, mengoreksi nama orang, singkatan, atau istilah teknis langsung di antarmuka GTK4, lalu melanjutkan proses dubbing dengan teks hasil perbaikan.
 
----
+### 🛡️ 5. Fallback Cascade & Retry Countdown Interaktif
+- **Kaskade Fallback Multi-Model:** Jika kuota model utama `gemini-3.1-flash-tts-preview` penuh (HTTP 429) atau sedang maintenance, sistem secara otomatis beralih ke `gemini-2.5-flash-preview-tts` dan `gemini-2.5-pro-preview-tts` tanpa menggagalkan proses job.
+- **Countdown Timer Detik-demi-Detik:** Menampilkan hitungan mundur waktu reset kuota secara langsung pada tampilan progress bar.
 
-## ✨ Fitur Utama
+### ⚡ 6. Live API Key & Connection Validator
+- Tombol **"Test Connection"** pada dialog Pengaturan (*Settings*) untuk memvalidasi API key secara instan via endpoint `GET /v1beta/models`.
+- Panggilan zero-token (*0 token generative*) yang aman dan memberikan konfirmasi visual apakah API key aktif dan kuota tersedia.
 
-### 🎙️ 1. Audio & Video Dubbing Mutakhir
-- **Dukungan Format Luas:** Menerima input audio (`MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus`) serta berkas video populer (`MP4, MKV, MOV, WebM`).
-- **Zero-Transcoding Fast Video Remuxing:** Menggabungkan track suara dubbing baru langsung ke stream video asli secara instan (`-c:v copy`), menghasilkan video ter-dubbing tanpa degradasi kualitas visual.
-- **Speaker Diarization & Multi-Speaker Mapping:** Mengenali pembicara berbeda dalam percakapan dan memungkinkan penetapan suara aktor yang berbeda untuk Pembicara 1 dan Pembicara 2.
-- **Multi-Tier Isochronous Synchronization:** 
-  - Alokasi kuota karakter ketat (*character budgeting*) pada tahap penerjemahan agar panjang teks seimbang dengan slot durasi asli.
-  - Kompresi tempo wajar (*time-stretching*) via filter `atempo` (maksimal 1.25×) guna menghindari suara melengking (*chipmunk effect*).
-  - Penyisipan celah jeda alami (*silence padding*) untuk menjaga sinkronisasi bibir dan ritme percakapan.
-- **Ekspor Subtitle Otomatis:** Otomatis menghasilkan file subtitle standar (**`.srt`**, **`.vtt`**) serta naskah transkrip bilingual paralel (**`.txt`**).
-
-### 🗣️ 2. TTS Studio (AI Studio Style)
-- **Sintesis Langsung:** Hasilkan audio suara manusia berkualitas tinggi secara instan langsung dari input teks tanpa memerlukan berkas sumber.
-- **5 Profil Suara Neural:** Pilihan karakter vokal Google Gemini (`Puck`, `Charon`, `Kore`, `Fenrir`, `Aoede`).
-- **Custom Style Directive (Prompt Gaya Bebas):** Tuliskan instruksi bebas untuk memandu gaya bicara model AI (contoh: *"Bicara dengan nada berbisik, misterius, dan dramatis"* atau *"Ceria dan penuh semangat seperti pemandu acara podcast"*).
-- **Pengaturan Kecepatan (Pacing Multiplier):** Kendali kecepatan vokal fleksibel (0.8× santai, 1.0× normal, 1.15× dinamis, 1.3× cepat).
-- **Player & Exporter Terintegrasi:** Dengarkan pratinjau audio secara instan dan ekspor langsung ke format MP3.
-
-### 🎨 3. UI/UX Modern & Responsif (Libadwaita)
-- **Tampilan Bersih & Bebas Distraksi:** Tampilan hasil yang fokus pada aksi utama: **▶ Play Dubbed Audio**, **🎬 Play Dubbed Video**, **📄 Open Subtitles**, dan **📂 Open Containing Folder**.
-- **Desain Adaptif Penuh:** Jendela aplikasi responsif di berbagai resolusi layar berkat penggunaan `AdwClamp` dan `ScrolledWindow`.
-- **Integrasi Tema Sistem:** Mendukung otomatis tema Dark / Light sesuai preferensi desktop Linux.
-
-### 🔒 4. Keamanan & Privasi Lokal
-- **Penyimpanan Kredensial Terenkripsi:** API Key disimpan aman pada *FreeDesktop Secret Service* (GNOME Keyring / KWallet) dengan fallback berkas berizin ketat `0600`.
-- **Sandbox File Isolasi:** Seluruh proses berjalan di folder kerja terisolasi `~/.local/share/audiodub/jobs/<job_id>/`.
-- **Pembersihan Otomatis (*Auto Cleanup*):** Berkas temporer perantara dibersihkan otomatis setelah proses selesai.
-- **Aman dari Command Injection:** Pemanggilan binary eksternal (`ffmpeg`, `ffprobe`, `xdg-open`) menggunakan argumen terstruktur (`std::process::Command`), tanpa shell string concatenation.
+### 🗣️ 7. TTS Studio (AI Studio Style)
+- Memproduksi suara manusia sintetis langsung dari teks bebas tanpa berkas sumber.
+- Mendukung *Custom Style Directive* (arahan emosi dan gaya bicara bebas, misal: *"Bicara dengan nada berbisik, misterius, dan dramatis"*).
+- Kendali kecepatan berbicara (0.8× santai hingga 1.3× cepat) dengan pemutar audio dan ekspor MP3 instan.
 
 ---
 
-## 🏛️ Arsitektur Hexagonal (Ports & Adapters)
+## 🏛️ Arsitektur Heksagonal & Alur Kerja
 
-Struktur kode AudioDub AI menerapkan prinsip *Clean Hexagonal Architecture* guna memastikan modularitas dan pemisahan murni antara logika bisnis dan implementasi teknis:
+AudioDub AI menerapkan prinsip *Clean Hexagonal Architecture* (Ports & Adapters) yang memisahkan logika bisnis murni dari dependensi eksternal (GTK, Tokio, Reqwest, FFmpeg):
 
 ```text
 audiodub/
 ├── src/
 │   ├── main.rs                     # Entry point & CLI/GUI dispatcher
-│   ├── app.rs                      # AdwApplication lifecycle
+│   ├── app.rs                      # AdwApplication lifecycle & styling
 │   │
 │   ├── domain/                     # Pure Business Logic (Bebas IO, GTK, Tokio, FFmpeg)
 │   │   ├── audio.rs                # AudioDocument, AudioFormat, MediaMetadata
-│   │   ├── language.rs             # LanguageId, LanguageRegistry (85+ Bahasa)
+│   │   ├── language.rs             # LanguageId (ISO 639-2), LanguageRegistry
 │   │   ├── transcript.rs           # Transcript, TranscriptSegment, WordTimestamp
 │   │   ├── translation.rs          # TranslatedDocument, TranslationSegment
-│   │   ├── synthesis.rs            # VoiceProfile, SynthesizedSegment, AudioArtifact
+│   │   ├── synthesis.rs            # VoiceProfile, SpeakerVoiceConfig, AudioArtifact
 │   │   ├── job.rs                  # Job, JobProgress, PipelineStage (12-state machine)
-│   │   ├── subtitle.rs             # Generator .srt, .vtt, dan bilingual .txt
+│   │   ├── subtitle.rs             # Generator format .srt, .vtt, dan bilingual .txt
 │   │   └── errors.rs               # DomainError
 │   │
 │   ├── application/                # Use Cases & Interfaces (Ports)
 │   │   ├── ports/                  # Trait contracts (AudioEngine, Transcriber, Synthesizer, dsb.)
-│   │   └── pipeline.rs             # PipelineOrchestrator & Concurrency Stream
+│   │   └── pipeline.rs             # PipelineOrchestrator, ReviewRequest & Fallback Cascade
 │   │
 │   ├── infrastructure/             # Concrete Implementations (Adapters)
-│   │   ├── gemini/                 # Dual-Mode Transcriber, Flash-Lite Translate, Flash-TTS
-│   │   ├── ffmpeg/                 # Single-pass Aligner, ffprobe Inspector, Exporter
-│   │   ├── filesystem/             # Atomic JSON persistence, XDG Paths, Cleanup
-│   │   └── secrets/                # FreeDesktop Keyring & 0600 storage
+│   │   ├── gemini/                 # Client HTTP/2, Files API, Transcribe, Translate, TTS Fallback
+│   │   ├── ffmpeg/                 # BGM Ducking, Soft Subtitles, Single-pass Aligner, ffprobe
+│   │   ├── filesystem/             # Atomic JSON persistence, XDG Paths, Auto Cleanup
+│   │   └── secrets/                # FreeDesktop Secret Service & Keyring
 │   │
-│   ├── config/                     # Konfigurasi aplikasi & settings.toml
+│   ├── config/                     # Settings & AppConfig
 │   └── ui/                         # GTK4 + Libadwaita Presentation Layer
+│       ├── views/                  # Dropzone, Progress, Review, Result, Settings, TTS Studio
+│       └── components/             # Language Picker, Error Banners
 └── tests/
-    ├── unit/                       # Unit tests domain & subtitle
-    └── integration/                # End-to-end workflow & performance benchmarks
+    ├── unit/                       # Unit tests domain, language, dan subtitle
+    └── integration/                # End-to-end workflow, audio engine ducking, dan benchmark
+```
+
+### 🔄 Diagram Alur Pemrosesan
+
+```mermaid
+graph TD
+    A[Input: Video / Audio File] --> B[FFmpeg Pre-Inspection & Pre-Extraction]
+    B --> C[Gemini STT: Transkripsi & Diarization]
+    C --> D[Gemini Translation Engine: gemini-3.1-flash-lite]
+    D --> E{Review Checkpoint Aktif?}
+    E -- Ya --> F[UI Review Editor: Pengguna Mengoreksi Teks]
+    E -- Tidak --> G[Lanjut ke Sintesis]
+    F --> G
+    G --> H[Gemini TTS Fallback Cascade: 3.1 Flash -> 2.5 Flash -> 2.5 Pro]
+    H --> I[FFmpeg Master Alignment & Padding]
+    I --> J{BGM Ducking Aktif?}
+    J -- Ya --> K[FFmpeg sidechaincompress: Redam Audio Latar]
+    J -- Tidak --> L[Audio Dubbing Murni]
+    K --> M{Input Berupa Video?}
+    L --> M
+    M -- Ya --> N[FFmpeg Remux: Video + Dubbed Audio + Soft Subtitles CC]
+    M -- Tidak --> O[Final Output: MP3 / WAV + Subtitles]
 ```
 
 ---
 
-## 🤖 Pipeline Model Google Gemini
+## 🤖 Matriks Model Google Gemini
 
-| Tahapan | Model Gemini | Protokol / Endpoint | Karakteristik & Optimasi |
+| Tahapan | Model Gemini | Endpoint REST | Peran & Karakteristik |
 | :--- | :--- | :--- | :--- |
-| **Transkripsi (< 20MB)** | `gemini-2.5-flash` | `POST /v1beta/models/...:generateContent` | **Inline Fast-Path Base64**, bypass Files API, diarization & timestamps. |
-| **Transkripsi (≥ 20MB)** | `gemini-3.5-transcribe` | `POST /upload/v1beta/files` | Chunked upload untuk berkas media berdurasi panjang. |
-| **Terjemahan** | `gemini-3.1-flash-lite` | `POST /v1beta/models/...:generateContent` | Structured JSON mode, timing budget constraint per segmen, concurrent chunking. |
-| **Sintesis Suara (TTS)** | `gemini-3.1-flash-tts-preview` | `POST /v1beta/models/...:generateContent` | Native 24 kHz audio, multi-speaker profiling, 4-worker concurrent stream. |
+| **Speech-to-Text (< 20MB)** | `gemini-2.5-flash` | `POST /v1beta/models/...:generateContent` | **Inline Base64 Fast-Path**, bypass Files API, deteksi 85+ bahasa & timestamps. |
+| **Speech-to-Text (≥ 20MB)** | `gemini-3.5-transcribe` | `POST /upload/v1beta/files` | Interactions & Files API untuk berkas rekaman panjang. |
+| **Terjemahan Teks** | `gemini-3.1-flash-lite` | `POST /v1beta/models/...:generateContent` | Structured JSON mode, alokasi timing budget per segmen, gaya bahasa dinamis. |
+| **Sintesis Suara (Primer)** | `gemini-3.1-flash-tts-preview` | `POST /v1beta/models/...:generateContent` | Native 24 kHz audio, multi-speaker profiling. |
+| **Sintesis Suara (Fallback 1)** | `gemini-2.5-flash-preview-tts` | `POST /v1beta/models/...:generateContent` | Otomatis aktif jika kuota model primer habis / rate limited. |
+| **Sintesis Suara (Fallback 2)** | `gemini-2.5-pro-preview-tts` | `POST /v1beta/models/...:generateContent` | Fallback tingkat tinggi untuk kualitas suara premium. |
+| **Live Translation** | `gemini-3.5-live-translate-preview` | `POST /v1beta/models/...:generateContent` | Dubbing kilat langsung dari audio ke audio. |
+| **Validasi Koneksi** | *Management Endpoint* | `GET /v1beta/models?key=...` | Zero-token validation untuk menguji keabsahan API Key. |
 
 ---
 
@@ -143,52 +175,64 @@ audiodub/
 
 ### 1. Antarmuka Grafis Desktop (GUI)
 
-Luncurkan aplikasi melalui menu aplikasi atau terminal:
+Luncurkan aplikasi melalui menu aplikasi desktop atau perintah terminal:
+
 ```bash
 audiodub
 ```
 
-1. **Pengaturan API Key:** Klik tombol ikon gir (*Preferences*) di HeaderBar, masukkan Google Gemini API Key Anda dari [Google AI Studio](https://aistudio.google.com/), lalu klik **Save**.
-2. **Pilih Berkas:** Tarik & letakkan (*drag-and-drop*) berkas audio/video ke dropzone, atau klik **Choose a File...**.
-3. **Konfigurasi Bahasa & Suara:**
-   - Pilih bahasa sumber (`Auto Detect` atau spesifik).
-   - Pilih bahasa target (misal: English, Japanese, Indonesian, German, French, Spanish, dll.).
-   - Pilih *Translation Tone* (`Neutral`, `Casual`, `Formal`, `Creative`).
-   - *(Opsional)* Tentukan suara khusus untuk Speaker 1 & 2.
-4. **Mulai Dubbing:** Klik tombol **Translate & Dub Media**.
-5. **Pemutaran & Akses Berkas:** Setelah selesai, gunakan pemutar terintegrasi untuk mendengarkan audio atau menonton video hasil dubbing, atau klik tombol **Open Folder**.
+1. **Konfigurasi API Key:**
+   - Buka menu **Preferences / Settings** (ikon gir di HeaderBar).
+   - Masukkan Google Gemini API Key Anda dari [Google AI Studio](https://aistudio.google.com/).
+   - Klik **Test Connection** untuk memastikan koneksi aktif dan kuota tersedia, lalu tutup dialog.
+2. **Pilih Berkas:**
+   - Tarik & letakkan (*drag-and-drop*) berkas audio atau video ke area Dropzone, atau klik **Choose a File...**.
+3. **Atur Preferensi Dubbing:**
+   - **Bahasa Sumber & Target:** Pilih bahasa audio asli (`Auto Detect` didukung) dan bahasa target terjemahan.
+   - **Translation Tone:** Pilih gaya bahasa (`Neutral`, `Casual`, `Formal`, `Creative`).
+   - **Background Audio Ducking:** Aktifkan jika ingin mempertahankan musik latar / efek suara asli dengan peredaman otomatis.
+   - **Review & Edit Translation:** Aktifkan jika ingin mengoreksi teks terjemahan sebelum suara disintesis.
+   - **Speaker Voices:** Tentukan karakter suara berbeda untuk Speaker 1 dan Speaker 2.
+4. **Mulai Proses:** Klik tombol **Translate & Dub Media**.
+5. **Pemutaran & Ekspor:** Setelah selesai, putar audio atau tonton video hasil dubbing dengan soft subtitle langsung di pemutar terintegrasi, atau klik **Open Containing Folder**.
 
 ---
 
 ### 2. Antarmuka Baris Perintah (CLI Companion)
 
-AudioDub AI dapat dijalankan secara penuh tanpa antarmuka grafis untuk kebutuhan scripting dan automasi:
+AudioDub AI dapat dijalankan secara penuh tanpa UI grafis untuk kebutuhan scripting, automasi server, dan batch processing:
 
 ```bash
 # Menentukan API Key via environment variable
 export GEMINI_API_KEY="AIzaSyYourGeminiApiKeyHere"
 
-# 1. Menerjemahkan audio podcast (Indonesia -> English) dengan tone santai
-audiodub translate podcast.mp3 --source id --target en --tone casual --output podcast_en.mp3
+# 1. Dubbing berkas video MP4 dengan peredaman musik latar (ducking) dan soft subtitles
+audiodub translate video.mp4 --source id --target en --tone casual --duck
 
-# 2. Melakukan dubbing video MP4 ke bahasa Jepang dengan suara spesifik
-audiodub translate video.mp4 --target ja --tone formal --voice-1 Kore --voice-2 Puck
+# 2. Dubbing audio dengan penetapan suara multi-speaker spesifik
+audiodub translate interview.mp3 --target ja --voice-1 Kore --voice-2 Puck --output interview_ja.mp3
 
-# 3. Batch processing banyak berkas media sekaligus
+# 3. Menggunakan engine Live Fast Translate
+audiodub translate speech.wav --target es --live
+
+# 4. Batch processing banyak berkas media sekaligus dalam satu antrean
 audiodub batch video1.mp4 video2.mkv clip.wav --target en --tone neutral
 
-# 4. Text-to-Speech langsung melalui terminal
+# 5. Sintesis Text-to-Speech langsung melalui terminal
 audiodub tts "Halo! Ini adalah contoh sintesis suara instan." --voice Puck --speed 1.0 --output halo.mp3
 
-# 5. Text-to-Speech dengan arahan gaya bicara (AI Studio Style)
-audiodub tts "Malam itu hening dan mencekam..." --voice Charon --style "Bicara seperti narator cerita horor dengan nada rendah dan jeda dramatis" --output cerita.mp3
+# 6. Text-to-Speech dengan arahan gaya bicara (AI Studio Style)
+audiodub tts "Malam itu hening dan mencekam..." \
+  --voice Charon \
+  --style "Bicara seperti narator cerita horor dengan nada rendah, berat, dan jeda dramatis" \
+  --output cerita.mp3
 ```
 
 ---
 
 ## 🛠️ Kompilasi dari Kode Sumber (Build from Source)
 
-Jika ingin melakukan kompilasi manual, pastikan dependensi sistem telah terpasang:
+Jika ingin melakukan kompilasi mandiri dari kode sumber, pastikan *Rust toolchain* (1.75+) dan dependensi sistem telah terpasang:
 
 ### 1. Pasang Dependensi Sistem
 
@@ -206,7 +250,7 @@ sudo apt update && sudo apt install -y \
 
 ```bash
 sudo dnf install -y \
-  gcc rust cargo gtk4-devel libadwaita-devel ffmpeg openssl-devel
+  gcc rust cargo gtk4-devel libadwaita-devel ffmpeg openssl-devel pkg-config
 ```
 </details>
 
@@ -240,24 +284,39 @@ cd dubing
 # Kompilasi binary rilis teroptimasi
 cargo build --release
 
-# Jalankan binary
+# Jalankan aplikasi
 ./target/release/audiodub
 ```
 
 ---
 
+## ⚙️ Konfigurasi & Penyimpanan Sandi
+
+- **Penyimpanan API Key:**
+  - Prioritas utama: Sistem *FreeDesktop Secret Service* (GNOME Keyring / KWallet via `keyring-rs`).
+  - Fallback aman: Berkas konfigurasi terlindungi dengan izin `0600` di `~/.config/audiodub/config.toml`.
+  - Dukungan variabel lingkungan: `export GEMINI_API_KEY="..."`.
+- **Direktori Keluaran (*Outputs*):**
+  - Seluruh file hasil dubbing, video remuxed, dan subtitle tersimpan rapi di:  
+    `~/.local/share/audiodub/outputs/`
+- **Isolasi Berkas Temporer (*Sandboxing*):**
+  - Setiap job diproses dalam direktori terisolasi `~/.local/share/audiodub/jobs/<job_id>/`.
+  - Berkas segmen audio sementara otomatis dibersihkan setelah proses selesai (dapat diubah via opsi *Debug Mode* di Settings).
+
+---
+
 ## 🧪 Pengujian & Verifikasi Kualitas
 
-Seluruh basis kode diverifikasi secara berkala dengan standar pengujian ketat:
+Basis kode AudioDub AI diuji dengan standar kualitas ketat bebas celah keamanan:
 
 ```bash
-# Pengecekan formatting
+# Pengecekan formatting kode standar
 cargo fmt --check
 
-# Linter Clippy (Zero Warning Policy)
+# Pemeriksaan linter Clippy (Zero Warning Policy)
 cargo clippy --all-targets --all-features -- -D warnings
 
-# Menjalankan seluruh test suite (Unit, Integrasi, Benchmark)
+# Menjalankan seluruh pengujian unit, integrasi, dan benchmark
 cargo test --all-targets
 ```
 
@@ -265,5 +324,5 @@ cargo test --all-targets
 
 ## 📄 Lisensi
 
-Proyek ini dirilis di bawah lisensi terbuka [MIT License](LICENSE).
+Proyek ini dirilis di bawah lisensi terbuka [MIT License](LICENSE).  
 Bebas digunakan, dimodifikasi, dan didistribusikan untuk keperluan personal maupun komersial.
