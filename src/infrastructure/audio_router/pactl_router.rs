@@ -24,7 +24,7 @@ impl Default for PactlAudioRouter {
 #[async_trait]
 impl AudioRouter for PactlAudioRouter {
     async fn is_available(&self) -> bool {
-        match Command::new("pactl").arg("info").output() {
+        match Command::new("pactl").env("LC_ALL", "C").arg("info").output() {
             Ok(out) => out.status.success(),
             Err(_) => false,
         }
@@ -33,6 +33,7 @@ impl AudioRouter for PactlAudioRouter {
     async fn create_null_sink(&self, sink_name: &str) -> Result<u32, DomainError> {
         let desc_arg = format!("sink_properties=device.description=\"AudioDub_{}\"", sink_name);
         let output = Command::new("pactl")
+            .env("LC_ALL", "C")
             .args([
                 "load-module",
                 "module-null-sink",
@@ -64,6 +65,7 @@ impl AudioRouter for PactlAudioRouter {
 
     async fn unload_null_sink(&self, module_id: u32) -> Result<(), DomainError> {
         let output = Command::new("pactl")
+            .env("LC_ALL", "C")
             .args(["unload-module", &module_id.to_string()])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to execute pactl unload-module: {}", e)))?;
@@ -80,6 +82,7 @@ impl AudioRouter for PactlAudioRouter {
 
     async fn list_sink_inputs(&self) -> Result<Vec<AudioAppInfo>, DomainError> {
         let output = Command::new("pactl")
+            .env("LC_ALL", "C")
             .args(["list", "sink-inputs"])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to execute pactl list sink-inputs: {}", e)))?;
@@ -148,6 +151,7 @@ impl AudioRouter for PactlAudioRouter {
     async fn move_sink_input(&self, sink_input_id: u32, sink_name: &str) -> Result<(), DomainError> {
         info!("Moving sink-input {} to sink '{}'", sink_input_id, sink_name);
         let output = Command::new("pactl")
+            .env("LC_ALL", "C")
             .args(["move-sink-input", &sink_input_id.to_string(), sink_name])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to execute pactl move-sink-input: {}", e)))?;
@@ -166,6 +170,7 @@ impl AudioRouter for PactlAudioRouter {
     async fn restore_sink_input(&self, sink_input_id: u32) -> Result<(), DomainError> {
         info!("Restoring sink-input {} to @DEFAULT_SINK@", sink_input_id);
         let output = Command::new("pactl")
+            .env("LC_ALL", "C")
             .args(["move-sink-input", &sink_input_id.to_string(), "@DEFAULT_SINK@"])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to restore sink-input: {}", e)))?;
@@ -180,6 +185,7 @@ impl AudioRouter for PactlAudioRouter {
 
     async fn get_default_sink_name(&self) -> Result<String, DomainError> {
         let output = Command::new("pactl")
+            .env("LC_ALL", "C")
             .arg("get-default-sink")
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to get default sink: {}", e)))?;
