@@ -166,4 +166,47 @@ impl FfmpegExporter {
 
         Ok(output_video.to_path_buf())
     }
+
+    /// Extract audio track from video into an optimized, lightweight MP3 audio file for STT/AI ingestion
+    pub fn extract_audio(
+        video_input: &Path,
+        output_audio: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args(["-y", "-i"])
+            .arg(video_input)
+            .args([
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "128k",
+                "-ar",
+                "24000",
+                "-ac",
+                "1",
+            ])
+            .arg(output_audio);
+
+        let output = cmd.output().map_err(|e| {
+            DomainError::ExportError(format!("Failed to execute ffmpeg audio extraction: {}", e))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(DomainError::ExportError(format!(
+                "FFmpeg audio extraction failed with exit code {:?}: {}",
+                output.status.code(),
+                stderr
+            )));
+        }
+
+        if !output_audio.exists() {
+            return Err(DomainError::ExportError(
+                "Extracted audio file was not created".to_string(),
+            ));
+        }
+
+        Ok(output_audio.to_path_buf())
+    }
 }

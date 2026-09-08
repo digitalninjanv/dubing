@@ -44,4 +44,11 @@ pub trait AudioEngine: Send + Sync {
         audio_input: &Path,
         output_video: &Path,
     ) -> Result<PathBuf, DomainError>;
+
+    /// Extract audio track from video file into an optimized audio document for AI transcription
+    async fn extract_audio(
+        &self,
+        video_path: &Path,
+        output_audio_path: &Path,
+    ) -> Result<AudioDocument, DomainError>;
 }

@@ -186,6 +186,38 @@ impl PipelineOrchestrator {
             || job.stage == PipelineStage::Uploading
             || job.stage == PipelineStage::Transcribing
         {
+            // If source input is a video container, extract audio track locally first for ultra-fast, lightweight upload
+            let audio_for_transcription = if job.source_audio.format.is_video() {
+                update_stage(
+                    &mut job,
+                    PipelineStage::Validating,
+                    "Extracting audio track from video container...",
+                )?;
+                self.job_repo.save(&job).await?;
+                on_progress(&job);
+
+                let extracted_path = job_dir.join("extracted_source_audio.mp3");
+                if extracted_path.exists() {
+                    if let Ok(doc) = self
+                        .audio_engine
+                        .inspect_and_validate(&extracted_path, self.audio_config.max_file_size_bytes)
+                        .await
+                    {
+                        doc
+                    } else {
+                        self.audio_engine
+                            .extract_audio(&job.source_audio.path, &extracted_path)
+                            .await?
+                    }
+                } else {
+                    self.audio_engine
+                        .extract_audio(&job.source_audio.path, &extracted_path)
+                        .await?
+                }
+            } else {
+                job.source_audio.clone()
+            };
+
             update_stage(
                 &mut job,
                 PipelineStage::Uploading,
@@ -204,7 +236,7 @@ impl PipelineOrchestrator {
 
             let t = self
                 .transcriber
-                .transcribe(&job.source_audio, &job.source_language)
+                .transcribe(&audio_for_transcription, &job.source_language)
                 .await?;
 
             // If source language was Auto, update job's source language to detected

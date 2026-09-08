@@ -145,4 +145,22 @@ impl AudioEngine for FfmpegAudioEngine {
         .await
         .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
     }
+
+    async fn extract_audio(
+        &self,
+        video_path: &Path,
+        output_audio_path: &Path,
+    ) -> Result<AudioDocument, DomainError> {
+        let v_in = video_path.to_path_buf();
+        let a_out = output_audio_path.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            FfmpegExporter::extract_audio(&v_in, &a_out)
+        })
+        .await
+        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))??;
+
+        self.inspect_and_validate(output_audio_path, 500 * 1024 * 1024)
+            .await
+    }
 }

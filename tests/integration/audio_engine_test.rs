@@ -248,3 +248,44 @@ async fn test_duration_sync_enforcement_4_seconds() {
         diff
     );
 }
+
+#[tokio::test]
+async fn test_ffmpeg_video_audio_extraction() {
+    let dir = tempdir().unwrap();
+    let video_mp4 = dir.path().join("test_video.mp4");
+    let extracted_mp3 = dir.path().join("extracted.mp3");
+
+    // Generate a synthetic 2-second MP4 test video with audio using lavfi testsrc and sine
+    let status = Command::new("ffmpeg")
+        .arg("-y")
+        .args(["-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30"])
+        .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2"])
+        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        .arg(&video_mp4)
+        .status()
+        .expect("Failed to execute ffmpeg for test video generation");
+
+    assert!(status.success(), "Failed to generate test video");
+
+    let engine = FfmpegAudioEngine::new();
+
+    // 1. Validate video container
+    let video_doc = engine
+        .inspect_and_validate(&video_mp4, 100 * 1024 * 1024)
+        .await
+        .expect("Video document should be valid");
+
+    assert!(video_doc.format.is_video());
+    assert_eq!(video_doc.format, AudioFormat::Mp4);
+
+    // 2. Extract audio track
+    let audio_doc = engine
+        .extract_audio(&video_mp4, &extracted_mp3)
+        .await
+        .expect("Audio extraction should succeed");
+
+    assert_eq!(audio_doc.format, AudioFormat::Mp3);
+    assert!(extracted_mp3.exists());
+    assert!(audio_doc.metadata.duration_ms >= 1800 && audio_doc.metadata.duration_ms <= 2200);
+}
+

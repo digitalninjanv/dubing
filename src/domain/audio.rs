@@ -93,17 +93,22 @@ pub struct AudioDocument {
 impl AudioDocument {
     pub fn validate_for_processing(&self, max_bytes: u64) -> Result<(), String> {
         if self.size_bytes == 0 {
-            return Err("Audio file is empty (0 bytes)".to_string());
+            return Err("Media file is empty (0 bytes)".to_string());
         }
-        if self.size_bytes > max_bytes {
+        let effective_max_bytes = if self.format.is_video() {
+            max_bytes.max(4 * 1024 * 1024 * 1024) // Allow up to 4GB for video containers
+        } else {
+            max_bytes
+        };
+        if self.size_bytes > effective_max_bytes {
             return Err(format!(
-                "Audio file size ({} MB) exceeds maximum allowed ({} MB)",
+                "File size ({} MB) exceeds maximum allowed ({} MB)",
                 self.size_bytes / (1024 * 1024),
-                max_bytes / (1024 * 1024)
+                effective_max_bytes / (1024 * 1024)
             ));
         }
         if self.metadata.duration_ms == 0 {
-            return Err("Audio file has zero duration or cannot be decoded".to_string());
+            return Err("Media file has zero duration or cannot be decoded".to_string());
         }
         Ok(())
     }
