@@ -37,13 +37,8 @@ impl AudioStreamPlayer {
         let mut child = if use_pw_cat {
             Command::new("pw-cat")
                 .args([
-                    "--playback",
-                    "--raw",
-                    "--rate", "24000",
-                    "--channels", "1",
-                    "--format", "s16",
-                    "--target", effective_sink,
-                    "-",
+                    "--playback", "--raw", "--rate", "24000", "--channels", "1",
+                    "--format", "s16", "--latency", "20ms", "--target", effective_sink, "-",
                 ])
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -52,10 +47,9 @@ impl AudioStreamPlayer {
         } else {
             Command::new("ffmpeg")
                 .args([
-                    "-hide_banner", "-loglevel", "error",
-                    "-fflags", "nobuffer", "-flags", "low_delay",
-                    "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "-",
-                    "-f", "pulse", effective_sink,
+                    "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
+                    "-flags", "low_delay", "-f", "s16le", "-ar", "24000", "-ac", "1",
+                    "-i", "-", "-f", "pulse", effective_sink,
                 ])
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -108,12 +102,10 @@ impl AudioStreamPlayer {
                     }
                 }
             }
-
             let _ = child.kill().await;
             let _ = child.wait().await;
             debug!("Live playback process terminated");
         });
-
         Ok(())
     }
 }
