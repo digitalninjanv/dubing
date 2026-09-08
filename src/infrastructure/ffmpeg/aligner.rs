@@ -172,12 +172,15 @@ impl FfmpegAligner {
             start_ms: u64,
         }
 
+        // R4: HashMap for O(1) lookup instead of O(n²) find per segment.
+        let source_map: std::collections::HashMap<&str, &TranscriptSegment> =
+            source_timeline.iter().map(|s| (s.id.as_str(), s)).collect();
         let mut plans = Vec::with_capacity(synthesized.len());
         for (idx, synth_seg) in synthesized.iter().enumerate() {
             let target_path = job_dir.join(format!("align_{:04}.wav", idx));
-            let source_seg = source_timeline
-                .iter()
-                .find(|s| s.id == synth_seg.segment_id)
+            let source_seg = source_map
+                .get(synth_seg.segment_id.as_str())
+                .copied()
                 .or_else(|| source_timeline.get(idx));
 
             let (start_ms, end_ms) = if let Some(src) = source_seg {

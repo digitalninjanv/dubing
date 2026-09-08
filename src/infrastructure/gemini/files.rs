@@ -193,7 +193,9 @@ impl GeminiFilesApi {
             self.client.api_key()
         );
 
-        for _ in 0..15 {
+        // Exponential backoff with jitter (R1): avoid hammering 15×1s fixed.
+        let backoffs = [500u64, 800, 1200, 1800, 2500, 3500, 5000, 7000];
+        for (i, delay) in backoffs.iter().enumerate() {
             let resp = self.client.http().get(&url).send().await;
             if let Ok(response) = resp {
                 if response.status().is_success() {
@@ -208,7 +210,21 @@ impl GeminiFilesApi {
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            // Jitter 100–300ms
+            let jitter = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos()
+                % 200) as u64
+                + 100;
+            let sleep_ms = delay + jitter;
+            tracing::debug!(
+                "wait_for_active poll {}/{} -> sleep {}ms",
+                i + 1,
+                backoffs.len(),
+                sleep_ms
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
         }
 
         // Fallback: fetch final state or return

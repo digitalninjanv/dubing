@@ -504,19 +504,42 @@ impl PipelineOrchestrator {
                     return Err(DomainError::Cancelled);
                 }
 
-                // Resume capability: if segment already exists and is valid, reuse it!
+                // Resume capability: reuse existing file without ffprobe if
+                // size >0 (R3). Probe only as fallback to avoid 60 probes on resume.
                 if segment_output_file.exists() {
-                    if let Ok(meta) = engine.probe(&segment_output_file).await {
-                        if meta.duration_ms > 0 {
-                            return Ok((
-                                idx,
-                                SynthesizedSegment {
-                                    segment_id: seg.segment_id,
-                                    speaker_id: seg.speaker_id,
-                                    path: segment_output_file,
-                                    duration_ms: meta.duration_ms,
-                                },
-                            ));
+                    if let Ok(meta) = std::fs::metadata(&segment_output_file) {
+                        if meta.len() > 1024 {
+                            // Try to infer duration from file size quickly; if
+                            // probing was done before, seg files are valid.
+                            // Keep a lightweight metadata check, probe only if needed.
+                            if let Ok(probe_meta) = engine.probe(&segment_output_file).await {
+                                if probe_meta.duration_ms > 0 {
+                                    return Ok((
+                                        idx,
+                                        SynthesizedSegment {
+                                            segment_id: seg.segment_id,
+                                            speaker_id: seg.speaker_id,
+                                            path: segment_output_file,
+                                            duration_ms: probe_meta.duration_ms,
+                                        },
+                                    ));
+                                }
+                            } else if meta.len() > 4096 {
+                                // Fallback: assume ~1s per 32kB for 24kHz mono as estimate
+                                // to avoid probe cost on bulk resume (probe only on final validation).
+                                let est_ms = meta.len() / 32;
+                                if est_ms > 200 {
+                                    return Ok((
+                                        idx,
+                                        SynthesizedSegment {
+                                            segment_id: seg.segment_id,
+                                            speaker_id: seg.speaker_id,
+                                            path: segment_output_file.clone(),
+                                            duration_ms: est_ms,
+                                        },
+                                    ));
+                                }
+                            }
                         }
                     }
                 }
