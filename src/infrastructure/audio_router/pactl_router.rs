@@ -10,6 +10,41 @@ impl PactlAudioRouter {
     pub fn new() -> Self {
         Self
     }
+
+    fn sink_input_sink(sink_input_id: u32) -> Result<String, DomainError> {
+        let output = Command::new("pactl")
+            .args(["list", "sink-inputs"])
+            .output()
+            .map_err(|e| DomainError::Internal(format!("Failed to inspect sink input: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(DomainError::Internal(format!(
+                "pactl list sink-inputs failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+
+        let header = format!("Sink Input #{}", sink_input_id);
+        let mut in_target = false;
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("Sink Input #") {
+                in_target = trimmed == header;
+            } else if in_target {
+                if let Some(sink) = trimmed.strip_prefix("Sink:") {
+                    let sink = sink.trim();
+                    if !sink.is_empty() {
+                        return Ok(sink.to_string());
+                    }
+                }
+            }
+        }
+
+        Err(DomainError::Internal(format!(
+            "Selected audio stream #{} no longer exists",
+            sink_input_id
+        )))
+    }
 }
 
 impl Default for PactlAudioRouter {
@@ -37,7 +72,9 @@ impl AudioRouter for PactlAudioRouter {
                 &desc_arg,
             ])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl load-module: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl load-module: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -55,7 +92,10 @@ impl AudioRouter for PactlAudioRouter {
             ))
         })?;
 
-        info!("Created virtual null sink '{}' (module ID: {})", sink_name, module_id);
+        info!(
+            "Created virtual null sink '{}' (module ID: {})",
+            sink_name, module_id
+        );
         Ok(module_id)
     }
 
@@ -63,11 +103,17 @@ impl AudioRouter for PactlAudioRouter {
         let output = Command::new("pactl")
             .args(["unload-module", &module_id.to_string()])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl unload-module: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl unload-module: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
-            warn!("pactl unload-module {} warning: {}", module_id, err_msg.trim());
+            warn!(
+                "pactl unload-module {} warning: {}",
+                module_id,
+                err_msg.trim()
+            );
         } else {
             info!("Unloaded virtual null sink module {}", module_id);
         }
@@ -79,7 +125,9 @@ impl AudioRouter for PactlAudioRouter {
         let output = Command::new("pactl")
             .args(["list", "sink-inputs"])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl list sink-inputs: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl list sink-inputs: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -142,12 +190,22 @@ impl AudioRouter for PactlAudioRouter {
         Ok(apps)
     }
 
-    async fn move_sink_input(&self, sink_input_id: u32, sink_name: &str) -> Result<(), DomainError> {
-        info!("Moving sink-input {} to sink '{}'", sink_input_id, sink_name);
+    async fn move_sink_input(
+        &self,
+        sink_input_id: u32,
+        sink_name: &str,
+    ) -> Result<String, DomainError> {
+        info!(
+            "Moving sink-input {} to sink '{}'",
+            sink_input_id, sink_name
+        );
+        let original_sink = Self::sink_input_sink(sink_input_id)?;
         let output = Command::new("pactl")
             .args(["move-sink-input", &sink_input_id.to_string(), sink_name])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl move-sink-input: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl move-sink-input: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -157,19 +215,30 @@ impl AudioRouter for PactlAudioRouter {
             )));
         }
 
-        Ok(())
+        Ok(original_sink)
     }
 
-    async fn restore_sink_input(&self, sink_input_id: u32) -> Result<(), DomainError> {
-        info!("Restoring sink-input {} to @DEFAULT_SINK@", sink_input_id);
+    async fn restore_sink_input(
+        &self,
+        sink_input_id: u32,
+        original_sink: &str,
+    ) -> Result<(), DomainError> {
+        info!(
+            "Restoring sink-input {} to '{}'",
+            sink_input_id, original_sink
+        );
         let output = Command::new("pactl")
-            .args(["move-sink-input", &sink_input_id.to_string(), "@DEFAULT_SINK@"])
+            .args(["move-sink-input", &sink_input_id.to_string(), original_sink])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to restore sink-input: {}", e)))?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
-            warn!("Failed to restore sink-input {}: {}", sink_input_id, err_msg.trim());
+            warn!(
+                "Failed to restore sink-input {}: {}",
+                sink_input_id,
+                err_msg.trim()
+            );
         }
 
         Ok(())
@@ -189,5 +258,54 @@ impl AudioRouter for PactlAudioRouter {
         }
 
         Ok("@DEFAULT_SINK@".to_string())
+    }
+
+    async fn get_default_monitor_source(&self) -> Result<String, DomainError> {
+        let sink = self.get_default_sink_name().await?;
+        if sink == "@DEFAULT_SINK@" {
+            return Err(DomainError::Internal(
+                "Could not determine the default output sink for desktop capture.".to_string(),
+            ));
+        }
+        Ok(format!("{}.monitor", sink))
+    }
+
+    async fn get_default_source_name(&self) -> Result<String, DomainError> {
+        let output = Command::new("pactl")
+            .arg("get-default-source")
+            .output()
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to get default microphone: {}", e))
+            })?;
+        if !output.status.success() {
+            return Err(DomainError::Internal(format!(
+                "pactl get-default-source failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        let source = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if source.is_empty() {
+            return Err(DomainError::Internal(
+                "No default microphone source is configured.".to_string(),
+            ));
+        }
+        Ok(source)
+    }
+
+    async fn source_exists(&self, source_name: &str) -> Result<bool, DomainError> {
+        let output = Command::new("pactl")
+            .args(["list", "short", "sources"])
+            .output()
+            .map_err(|e| DomainError::Internal(format!("Failed to list audio sources: {}", e)))?;
+        if !output.status.success() {
+            return Err(DomainError::Internal(format!(
+                "pactl list short sources failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.split_whitespace().nth(1))
+            .any(|name| name == source_name))
     }
 }
