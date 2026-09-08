@@ -7,13 +7,15 @@ use crate::infrastructure::audio_stream::{AudioStreamCapture, AudioStreamPlayer}
 use crate::infrastructure::gemini::{GeminiLiveStreamer, LiveStreamSessionConfig};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct LiveSessionOptions {
     pub model_choice: LiveModelChoice,
     pub source_mode: AudioSourceMode,
-    pub target_app_id: Option<u32>,
+    /// Empty only for non-browser modes. Browser mode must resolve one or more browser streams
+    /// before capture starts; silently capturing `default` is both unreliable and unsafe.
+    pub target_app_ids: Vec<u32>,
     pub target_language: LanguageId,
     pub target_language_name: String,
     pub voice_name: String,
@@ -26,10 +28,7 @@ pub struct LiveDubberOrchestrator {
 }
 
 impl LiveDubberOrchestrator {
-    pub fn new(
-        audio_router: Arc<dyn AudioRouter>,
-        live_streamer: Arc<GeminiLiveStreamer>,
-    ) -> Self {
+    pub fn new(audio_router: Arc<dyn AudioRouter>, live_streamer: Arc<GeminiLiveStreamer>) -> Self {
         Self {
             audio_router,
             live_streamer,
@@ -57,7 +56,7 @@ impl LiveDubberOrchestrator {
         on_status(LiveDubberStatus::Initializing);
 
         let mut created_module_id: Option<u32> = None;
-        let mut moved_app_id: Option<u32> = None;
+        let mut moved_apps: Vec<(u32, String)> = Vec::new();
         let capture_source: String;
 
         match options.source_mode {
@@ -65,47 +64,86 @@ impl LiveDubberOrchestrator {
                 on_status(LiveDubberStatus::RoutingAudio);
                 info!("Setting up null sink to silence original YouTube/browser audio...");
 
+                if options.target_app_ids.is_empty() {
+                    return Err(DomainError::Internal(
+                        "No active browser audio stream was found. Start browser playback, refresh the application list, then retry.".to_string(),
+                    ));
+                }
+
                 if self.audio_router.is_available().await {
-                    match self.audio_router.create_null_sink(&self.virtual_sink_name).await {
+                    match self
+                        .audio_router
+                        .create_null_sink(&self.virtual_sink_name)
+                        .await
+                    {
                         Ok(mod_id) => {
                             created_module_id = Some(mod_id);
                             capture_source = format!("{}.monitor", self.virtual_sink_name);
 
-                            if let Some(app_id) = options.target_app_id {
-                                if let Err(e) = self
+                            for app_id in &options.target_app_ids {
+                                match self
                                     .audio_router
-                                    .move_sink_input(app_id, &self.virtual_sink_name)
+                                    .move_sink_input(*app_id, &self.virtual_sink_name)
                                     .await
                                 {
-                                    warn!("Failed to move target app to virtual sink: {}", e);
-                                } else {
-                                    moved_app_id = Some(app_id);
-                                    info!(
-                                        "Target app #{} audio routed to virtual sink (original sound silenced from speakers)",
-                                        app_id
-                                    );
+                                    Ok(original_sink) => {
+                                        moved_apps.push((*app_id, original_sink));
+                                        info!(
+                                            "Target app #{} routed to isolated virtual sink",
+                                            app_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        for (moved_id, original_sink) in &moved_apps {
+                                            let _ = self
+                                                .audio_router
+                                                .restore_sink_input(*moved_id, original_sink)
+                                                .await;
+                                        }
+                                        let _ = self.audio_router.unload_null_sink(mod_id).await;
+                                        return Err(DomainError::Internal(format!(
+                                            "Could not route selected browser audio stream #{}: {}",
+                                            app_id, e
+                                        )));
+                                    }
                                 }
                             }
                         }
-                        Err(e) => {
-                            warn!(
-                                "Failed to create null sink ({}); falling back to default monitor",
-                                e
-                            );
-                            capture_source = "default".to_string();
-                        }
+                        Err(e) => return Err(e),
                     }
                 } else {
-                    warn!("Audio router not available on system; capturing default audio device");
-                    capture_source = "default".to_string();
+                    return Err(DomainError::Internal(
+                        "PulseAudio or PipeWire-Pulse is unavailable; browser audio routing cannot start.".to_string(),
+                    ));
                 }
             }
             AudioSourceMode::SystemDesktop => {
-                capture_source = "default".to_string();
+                capture_source = self.audio_router.get_default_monitor_source().await?;
             }
             AudioSourceMode::Microphone => {
-                capture_source = "default".to_string();
+                capture_source = self.audio_router.get_default_source_name().await?;
             }
+        }
+
+        let source_available = self.audio_router.source_exists(&capture_source).await;
+        if !matches!(&source_available, Ok(true)) {
+            for (app_id, original_sink) in &moved_apps {
+                let _ = self
+                    .audio_router
+                    .restore_sink_input(*app_id, original_sink)
+                    .await;
+            }
+            if let Some(mod_id) = created_module_id {
+                let _ = self.audio_router.unload_null_sink(mod_id).await;
+            }
+            return match source_available {
+                Ok(false) => Err(DomainError::Internal(format!(
+                    "Audio source '{}' is not available. Verify the selected Linux audio device and start playback before retrying.",
+                    capture_source
+                ))),
+                Err(error) => Err(error),
+                Ok(true) => unreachable!("matched above"),
+            };
         }
 
         // Setup streaming channels
@@ -126,7 +164,8 @@ impl LiveDubberOrchestrator {
                 .await
                 .unwrap_or_else(|_| "@DEFAULT_SINK@".to_string());
             info!("Starting live playback worker on: {}", target_sink);
-            AudioStreamPlayer::start_playback(&target_sink, output_rx, cancel_token.clone()).await?;
+            AudioStreamPlayer::start_playback(&target_sink, output_rx, cancel_token.clone())
+                .await?;
         }
 
         // 3. Spawn transcript listener
@@ -158,9 +197,15 @@ impl LiveDubberOrchestrator {
             .await;
 
         // 5. Cleanup and teardown: restore original app audio routing
-        if let Some(app_id) = moved_app_id {
-            info!("Restoring target app #{} audio routing...", app_id);
-            let _ = self.audio_router.restore_sink_input(app_id).await;
+        for (app_id, original_sink) in moved_apps {
+            info!(
+                "Restoring target app #{} to its original audio sink...",
+                app_id
+            );
+            let _ = self
+                .audio_router
+                .restore_sink_input(app_id, &original_sink)
+                .await;
         }
 
         if let Some(mod_id) = created_module_id {
@@ -175,6 +220,7 @@ impl LiveDubberOrchestrator {
             Err(DomainError::Cancelled) => Ok(()),
             Err(e) => {
                 error!("Live Dubber session encountered error: {}", e);
+                on_status(LiveDubberStatus::Error(e.to_string()));
                 Err(e)
             }
         }

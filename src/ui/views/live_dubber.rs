@@ -439,11 +439,18 @@ impl LiveDubberView {
 
         // 3. Resolve Target App
         let app_idx = self.apps_combo.selected() as usize;
-        let target_app_id = if app_idx > 0 {
+        let target_app_ids = if app_idx > 0 {
             let apps = self.detected_apps.borrow();
-            apps.get(app_idx - 1).map(|a| a.sink_input_id)
+            apps.get(app_idx - 1)
+                .map(|a| vec![a.sink_input_id])
+                .unwrap_or_default()
         } else {
-            None
+            self.detected_apps
+                .borrow()
+                .iter()
+                .filter(|app| is_browser_process(&app.binary_name))
+                .map(|app| app.sink_input_id)
+                .collect()
         };
 
         // 4. Resolve Target Language
@@ -470,7 +477,7 @@ impl LiveDubberView {
         let options = LiveSessionOptions {
             model_choice,
             source_mode,
-            target_app_id,
+            target_app_ids,
             target_language: target_lang,
             target_language_name: target_lang_name,
             voice_name,
@@ -531,9 +538,40 @@ impl LiveDubberView {
                 .await;
 
             if let Err(e) = res {
-                view_done.status_desc.set_text(&format!("Live Session Error: {}", e));
+                view_done
+                    .status_desc
+                    .set_text(&format!("Live Session Error: {}", e));
             }
             view_done.set_ui_stopped();
         });
+    }
+}
+
+fn is_browser_process(binary_name: &str) -> bool {
+    matches!(
+        binary_name.to_ascii_lowercase().as_str(),
+        "chrome"
+            | "google-chrome"
+            | "chromium"
+            | "chromium-browser"
+            | "firefox"
+            | "brave"
+            | "brave-browser"
+            | "microsoft-edge"
+            | "microsoft-edge-stable"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_browser_process;
+
+    #[test]
+    fn recognizes_supported_browser_processes_without_matching_media_players() {
+        assert!(is_browser_process("firefox"));
+        assert!(is_browser_process("Google-Chrome"));
+        assert!(is_browser_process("brave-browser"));
+        assert!(!is_browser_process("vlc"));
+        assert!(!is_browser_process("pipewire"));
     }
 }
