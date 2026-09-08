@@ -32,6 +32,9 @@ impl GeminiLiveStreamer {
     /// - Consumes 16kHz PCM chunks from `input_rx`
     /// - Emits synthesized 24kHz PCM chunks to `output_tx`
     /// - Emits real-time transcript updates to `transcript_tx`
+    ///
+    /// Uses official Live Translation configuration for gemini-3.5-live-translate-preview
+    /// (translationConfig + input/output transcriptions) per Google AI docs 2026.
     pub async fn run_live_session(
         &self,
         config: LiveStreamSessionConfig<'_>,
@@ -57,11 +60,30 @@ impl GeminiLiveStreamer {
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // Build official setup payload
+        // Build official setup payload — critical fix for Live Translate model
         let setup_msg = match config.model_choice {
-            LiveModelChoice::Gemini35LiveTranslate
-            | LiveModelChoice::Gemini31FlashLive
-            | LiveModelChoice::Gemini25FlashNativeAudio => {
+            LiveModelChoice::Gemini35LiveTranslate => {
+                // Official Live Translation setup (Google AI docs July 2026+)
+                // systemInstruction is accepted but SILENTLY IGNORED on this model.
+                // Must use translationConfig + transcriptions.
+                serde_json::json!({
+                    "setup": {
+                        "model": format!("models/{}", config.model_choice.model_id()),
+                        "generationConfig": {
+                            "responseModalities": ["AUDIO"],
+                            "inputAudioTranscription": {},
+                            "outputAudioTranscription": {},
+                            "translationConfig": {
+                                "targetLanguageCode": config.target_lang.as_str(),
+                                "echoTargetLanguage": false
+                            }
+                        }
+                    }
+                })
+            }
+            LiveModelChoice::Gemini31FlashLive | LiveModelChoice::Gemini25FlashNativeAudio => {
+                // Conversational / native-audio fallback models still benefit from
+                // systemInstruction + optional voiceConfig.
                 serde_json::json!({
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
@@ -189,19 +211,19 @@ impl GeminiLiveStreamer {
                     break;
                 }
 
-                // Forward incoming 16kHz PCM audio to Gemini Live API using official mediaChunks
+                // Forward incoming 16kHz PCM audio using official realtimeInput.audio shape
+                // (preferred) with mediaChunks fallback for compatibility.
                 maybe_chunk = input_rx.recv() => {
                     match maybe_chunk {
                         Some(raw_chunk) => {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&raw_chunk);
+                            // Prefer the documented `audio` field for Live Translation
                             let audio_msg = serde_json::json!({
                                 "realtimeInput": {
-                                    "mediaChunks": [
-                                        {
-                                            "mimeType": "audio/pcm;rate=16000",
-                                            "data": b64
-                                        }
-                                    ]
+                                    "audio": {
+                                        "mimeType": "audio/pcm;rate=16000",
+                                        "data": b64
+                                    }
                                 }
                             });
                             if let Err(e) = ws_sender.send(Message::Text(audio_msg.to_string())).await {

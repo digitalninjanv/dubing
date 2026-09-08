@@ -71,8 +71,10 @@ impl LiveDubberOrchestrator {
                     match self.audio_router.create_null_sink(&self.virtual_sink_name).await {
                         Ok(mod_id) => {
                             created_module_id = Some(mod_id);
-                            // Allow audio daemon to register virtual sink monitor
-                            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                            // PipeWire + pipewire-pulse needs longer settle time for
+                            // module-null-sink monitor source to become available.
+                            // 150ms was insufficient on many modern distros.
+                            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
                             capture_source = format!("{}.monitor", self.virtual_sink_name);
 
                             if let Some(app_id) = options.target_app_id {
