@@ -39,7 +39,7 @@ impl AudioStreamCapture {
             Command::new("pw-cat")
                 .args([
                     "--record", "--raw", "--rate", "16000", "--channels", "1",
-                    "--format", "s16", "--target", effective_source, "-",
+                    "--format", "s16", "--latency", "20ms", "--target", effective_source, "-",
                 ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -81,7 +81,6 @@ impl AudioStreamCapture {
         tokio::spawn(async move {
             const CHUNK_SIZE: usize = 3200;
             let mut buf = vec![0u8; CHUNK_SIZE];
-
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
@@ -110,12 +109,10 @@ impl AudioStreamCapture {
                     }
                 }
             }
-
             let _ = child.kill().await;
             let _ = child.wait().await;
             debug!("Live capture process terminated");
         });
-
         Ok(())
     }
 }
