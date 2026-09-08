@@ -1,6 +1,6 @@
 use crate::domain::DomainError;
 use std::process::Stdio;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -9,8 +9,15 @@ use tracing::{debug, info, warn};
 pub struct AudioStreamCapture;
 
 impl AudioStreamCapture {
-    /// Spawns an asynchronous capture loop reading raw 16kHz 16-bit mono PCM from a PulseAudio/PipeWire source.
-    /// Emits 100ms chunks (3,200 bytes) into the provided `chunk_tx`.
+    /// Capture 16 kHz signed-16 mono PCM for the Live API.
+    ///
+    /// Linux-first strategy:
+    /// 1. Prefer PipeWire's native `pw-cat` when available.
+    /// 2. Fall back to FFmpeg's PulseAudio interface for older/minimal systems.
+    ///
+    /// `pw-cat` is deliberately used as a long-lived realtime stream rather than spawning
+    /// FFmpeg for the audio transport. This avoids FFmpeg probing/buffering and works directly
+    /// with PipeWire/PipeWire-Pulse graphs.
     pub async fn start_capture(
         source_name: &str,
         chunk_tx: Sender<Vec<u8>>,
@@ -22,46 +29,47 @@ impl AudioStreamCapture {
             source_name
         };
 
-        info!("Starting live audio capture from source: {}", effective_source);
+        let use_pw_cat = Command::new("pw-cat")
+            .arg("--version")
+            .output()
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
-        // Low-latency FFmpeg pulse capture to stdout
-        let mut child = Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-fflags",
-                "nobuffer",
-                "-flags",
-                "low_delay",
-                "-probesize",
-                "32",
-                "-analyzeduration",
-                "0",
-                "-f",
-                "pulse",
-                "-i",
-                effective_source,
-                "-vn",
-                "-f",
-                "s16le",
-                "-acodec",
-                "pcm_s16le",
-                "-ac",
-                "1",
-                "-ar",
-                "16000",
-                "-flush_packets",
-                "1",
-                "-",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| DomainError::Internal(format!("Failed to spawn ffmpeg capture: {}", e)))?;
+        let backend = if use_pw_cat { "PipeWire" } else { "PulseAudio/pipewire-pulse fallback" };
+        info!("Starting live capture from '{}' using {} backend", effective_source, backend);
 
-        // Fast health check: detect if ffmpeg died immediately on opening input
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        let mut child = if use_pw_cat {
+            Command::new("pw-cat")
+                .args([
+                    "--record",
+                    "--raw",
+                    "--rate", "16000",
+                    "--channels", "1",
+                    "--format", "s16",
+                    "--target", effective_source,
+                    "-",
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| DomainError::Internal(format!("Failed to spawn PipeWire capture (pw-cat): {}", e)))?
+        } else {
+            Command::new("ffmpeg")
+                .args([
+                    "-hide_banner", "-loglevel", "error",
+                    "-fflags", "nobuffer", "-flags", "low_delay",
+                    "-f", "pulse", "-i", effective_source,
+                    "-vn", "-f", "s16le", "-acodec", "pcm_s16le",
+                    "-ac", "1", "-ar", "16000", "-flush_packets", "1", "-",
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| DomainError::Internal(format!("Failed to spawn FFmpeg capture fallback: {}", e)))?
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         if let Ok(Some(status)) = child.try_wait() {
             let mut err_msg = String::new();
             if let Some(mut err_pipe) = child.stderr.take() {
@@ -70,31 +78,31 @@ impl AudioStreamCapture {
                 err_msg = String::from_utf8_lossy(&err_buf).trim().to_string();
             }
             return Err(DomainError::Internal(format!(
-                "Live audio capture source '{}' unavailable (status {}): {}",
-                effective_source, status, err_msg
+                "Live audio capture source '{}' unavailable via {} (status {}): {}",
+                effective_source, backend, status, err_msg
             )));
         }
 
         let mut stdout = child.stdout.take().ok_or_else(|| {
-            DomainError::Internal("Failed to capture stdout of ffmpeg".to_string())
+            DomainError::Internal("Failed to capture live audio stdout".to_string())
         })?;
         let mut stderr = child.stderr.take();
 
         tokio::spawn(async move {
-            const CHUNK_SIZE: usize = 3200; // 100ms at 16kHz 16-bit mono
+            const CHUNK_SIZE: usize = 3200; // 100 ms @ 16 kHz / s16 / mono
             let mut buf = vec![0u8; CHUNK_SIZE];
 
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
-                        debug!("Capture loop received cancellation signal");
+                        debug!("Capture loop cancelled");
                         break;
                     }
                     read_res = stdout.read_exact(&mut buf) => {
                         match read_res {
                             Ok(_) => {
                                 if chunk_tx.send(buf.clone()).await.is_err() {
-                                    debug!("Capture consumer channel closed; exiting capture loop");
+                                    debug!("Capture consumer closed");
                                     break;
                                 }
                             }
@@ -105,10 +113,7 @@ impl AudioStreamCapture {
                                     let _ = err_pipe.read_to_end(&mut err_buf).await;
                                     err_msg = String::from_utf8_lossy(&err_buf).trim().to_string();
                                 }
-                                warn!(
-                                    "Capture read error or process terminated: {} (ffmpeg details: {})",
-                                    e, err_msg
-                                );
+                                warn!("Live capture stream ended: {} ({})", e, err_msg);
                                 break;
                             }
                         }
@@ -117,6 +122,7 @@ impl AudioStreamCapture {
             }
 
             let _ = child.kill().await;
+            let _ = child.wait().await;
             debug!("Live capture process terminated");
         });
 
