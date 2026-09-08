@@ -46,7 +46,12 @@ impl GeminiFilesApi {
         );
 
         let mut headers = HeaderMap::new();
-        headers.insert("X-Goog-Upload-Protocol", "multipart".parse().unwrap());
+        headers.insert(
+            "X-Goog-Upload-Protocol",
+            "multipart".parse().map_err(|e| {
+                DomainError::Internal(format!("Failed to build upload headers: {}", e))
+            })?,
+        );
 
         let file_name = file_path
             .file_name()

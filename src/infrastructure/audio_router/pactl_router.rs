@@ -31,7 +31,10 @@ impl AudioRouter for PactlAudioRouter {
     }
 
     async fn create_null_sink(&self, sink_name: &str) -> Result<u32, DomainError> {
-        let desc_arg = format!("sink_properties=device.description=\"AudioDub_{}\"", sink_name);
+        let desc_arg = format!(
+            "sink_properties=device.description=\"AudioDub_{}\"",
+            sink_name
+        );
         let output = Command::new("pactl")
             .args([
                 "load-module",
@@ -40,7 +43,9 @@ impl AudioRouter for PactlAudioRouter {
                 &desc_arg,
             ])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl load-module: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl load-module: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -58,7 +63,10 @@ impl AudioRouter for PactlAudioRouter {
             ))
         })?;
 
-        info!("Created virtual null sink '{}' (module ID: {})", sink_name, module_id);
+        info!(
+            "Created virtual null sink '{}' (module ID: {})",
+            sink_name, module_id
+        );
         Ok(module_id)
     }
 
@@ -66,11 +74,17 @@ impl AudioRouter for PactlAudioRouter {
         let output = Command::new("pactl")
             .args(["unload-module", &module_id.to_string()])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl unload-module: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl unload-module: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
-            warn!("pactl unload-module {} warning: {}", module_id, err_msg.trim());
+            warn!(
+                "pactl unload-module {} warning: {}",
+                module_id,
+                err_msg.trim()
+            );
         } else {
             info!("Unloaded virtual null sink module {}", module_id);
         }
@@ -82,7 +96,9 @@ impl AudioRouter for PactlAudioRouter {
         let output = Command::new("pactl")
             .args(["list", "sink-inputs"])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl list sink-inputs: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl list sink-inputs: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -145,12 +161,21 @@ impl AudioRouter for PactlAudioRouter {
         Ok(apps)
     }
 
-    async fn move_sink_input(&self, sink_input_id: u32, sink_name: &str) -> Result<(), DomainError> {
-        info!("Moving sink-input {} to sink '{}'", sink_input_id, sink_name);
+    async fn move_sink_input(
+        &self,
+        sink_input_id: u32,
+        sink_name: &str,
+    ) -> Result<(), DomainError> {
+        info!(
+            "Moving sink-input {} to sink '{}'",
+            sink_input_id, sink_name
+        );
         let output = Command::new("pactl")
             .args(["move-sink-input", &sink_input_id.to_string(), sink_name])
             .output()
-            .map_err(|e| DomainError::Internal(format!("Failed to execute pactl move-sink-input: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to execute pactl move-sink-input: {}", e))
+            })?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -166,13 +191,21 @@ impl AudioRouter for PactlAudioRouter {
     async fn restore_sink_input(&self, sink_input_id: u32) -> Result<(), DomainError> {
         info!("Restoring sink-input {} to @DEFAULT_SINK@", sink_input_id);
         let output = Command::new("pactl")
-            .args(["move-sink-input", &sink_input_id.to_string(), "@DEFAULT_SINK@"])
+            .args([
+                "move-sink-input",
+                &sink_input_id.to_string(),
+                "@DEFAULT_SINK@",
+            ])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to restore sink-input: {}", e)))?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
-            warn!("Failed to restore sink-input {}: {}", sink_input_id, err_msg.trim());
+            warn!(
+                "Failed to restore sink-input {}: {}",
+                sink_input_id,
+                err_msg.trim()
+            );
         }
 
         Ok(())

@@ -245,7 +245,14 @@ impl FfmpegAligner {
                     })
                 }));
             }
-            handles.into_iter().map(|h| h.join().unwrap()).collect()
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join().map_err(|_| {
+                        DomainError::AlignmentError("Audio alignment worker panicked".to_string())
+                    })?
+                })
+                .collect()
         });
 
         // 3. Assemble timeline sequentially (preserving correct chronology and silence gaps)

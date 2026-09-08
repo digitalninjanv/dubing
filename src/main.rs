@@ -85,7 +85,9 @@ fn print_usage() {
     println!(
         "  --engine <mode>           Dubbing engine: studio (default) or live (gemini-3.5-live-translate-preview)"
     );
-    println!("  --live, --live-translate  Shortcut for fast real-time Live Translate speech-to-speech");
+    println!(
+        "  --live, --live-translate  Shortcut for fast real-time Live Translate speech-to-speech"
+    );
     println!("\nTTS Studio Options:");
     println!(
         "  --voice, -v <name>        TTS voice: Puck, Charon, Kore, Fenrir, Aoede (default: Puck)"

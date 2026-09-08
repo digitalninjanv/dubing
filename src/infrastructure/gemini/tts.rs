@@ -148,6 +148,7 @@ impl GeminiSynthesizer {
         let http_client = self.client.http().clone();
         let target_endpoint = endpoint.clone();
         let op_name = format!("Gemini TTS ({})", model);
+        let api_key = self.client.api_key().to_string();
 
         let response = self
             .client
@@ -155,9 +156,11 @@ impl GeminiSynthesizer {
                 let cli = http_client.clone();
                 let url = target_endpoint.clone();
                 let bytes = body_bytes.clone();
+                let key = api_key.clone();
                 async move {
                     cli.post(&url)
                         .header("Content-Type", "application/json")
+                        .header("x-goog-api-key", key)
                         .body(bytes)
                         .send()
                         .await
@@ -274,7 +277,10 @@ impl SpeechSynthesizer for GeminiSynthesizer {
                 Ok(res) => return Ok(res),
                 Err(err) => {
                     warn!("TTS synthesis failed with model '{}': {}", model, err);
-                    if matches!(err, DomainError::Cancelled | DomainError::AuthenticationFailed) {
+                    if matches!(
+                        err,
+                        DomainError::Cancelled | DomainError::AuthenticationFailed
+                    ) {
                         return Err(err);
                     }
                     last_err = Some(err);

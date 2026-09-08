@@ -56,6 +56,12 @@ pub struct PipelineOptions {
     pub review_channel: Option<async_channel::Sender<ReviewRequest>>,
 }
 
+fn path_to_str(path: &std::path::Path) -> Result<String, DomainError> {
+    path.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| DomainError::Internal("File path contains non-UTF8 characters".to_string()))
+}
+
 pub struct PipelineOrchestrator {
     transcriber: Arc<dyn SpeechTranscriber>,
     translator: Arc<dyn TextTranslator>,
@@ -233,7 +239,10 @@ impl PipelineOrchestrator {
                 if extracted_path.exists() {
                     if let Ok(doc) = self
                         .audio_engine
-                        .inspect_and_validate(&extracted_path, self.audio_config.max_file_size_bytes)
+                        .inspect_and_validate(
+                            &extracted_path,
+                            self.audio_config.max_file_size_bytes,
+                        )
                         .await
                     {
                         doc
@@ -355,14 +364,18 @@ impl PipelineOrchestrator {
                             }
                         }
                         Ok(None) => {
-                            tracing::info!("User cancelled job during translation review checkpoint");
+                            tracing::info!(
+                                "User cancelled job during translation review checkpoint"
+                            );
                             job.cancel();
                             self.job_repo.save(&job).await?;
                             on_progress(&job);
                             return Err(DomainError::Cancelled);
                         }
                         Err(_) => {
-                            tracing::warn!("Review channel dropped, proceeding with existing translation");
+                            tracing::warn!(
+                                "Review channel dropped, proceeding with existing translation"
+                            );
                         }
                     }
                 }
@@ -409,9 +422,13 @@ impl PipelineOrchestrator {
                 .as_ref()
                 .and_then(|c| {
                     if idx == 0 {
-                        c.speaker_1_voice.as_deref().or_else(|| c.get_voice_for(Some(spk.as_str())))
+                        c.speaker_1_voice
+                            .as_deref()
+                            .or_else(|| c.get_voice_for(Some(spk.as_str())))
                     } else if idx == 1 {
-                        c.speaker_2_voice.as_deref().or_else(|| c.get_voice_for(Some(spk.as_str())))
+                        c.speaker_2_voice
+                            .as_deref()
+                            .or_else(|| c.get_voice_for(Some(spk.as_str())))
                     } else {
                         c.get_voice_for(Some(spk.as_str()))
                     }
@@ -871,32 +888,41 @@ impl PipelineOrchestrator {
         self.job_repo.save(&job).await?;
         on_progress(&job);
 
-        let output_extension = if self.audio_config.export_wav { "wav" } else { "mp3" };
+        let output_extension = if self.audio_config.export_wav {
+            "wav"
+        } else {
+            "mp3"
+        };
         let output_audio_path = job_dir.join(format!("dubbed_output.{}", output_extension));
         let bitrate_str = format!("{}k", self.audio_config.default_bitrate_kbps);
 
-        let mut ffmpeg_cmd = std::process::Command::new("ffmpeg");
-        ffmpeg_cmd.args([
-            "-y",
-            "-f",
-            "s16le",
-            "-ar",
-            "24000",
-            "-ac",
-            "1",
-            "-i",
-            live_res.raw_pcm_path.to_str().unwrap_or_default(),
-        ]);
-
-        if self.audio_config.export_wav {
-            ffmpeg_cmd.args(["-c:a", "pcm_s16le"]);
-        } else {
-            ffmpeg_cmd.args(["-c:a", "libmp3lame", "-b:a", &bitrate_str]);
-        }
-
-        ffmpeg_cmd.arg(output_audio_path.to_str().unwrap_or_default());
-
-        let export_status = ffmpeg_cmd.output().map_err(|e| {
+        let raw_pcm_str = path_to_str(&live_res.raw_pcm_path)?;
+        let output_audio_str = path_to_str(&output_audio_path)?;
+        let export_wav = self.audio_config.export_wav;
+        let export_status = tokio::task::spawn_blocking(move || {
+            let mut ffmpeg_cmd = std::process::Command::new("ffmpeg");
+            ffmpeg_cmd.args([
+                "-y",
+                "-f",
+                "s16le",
+                "-ar",
+                "24000",
+                "-ac",
+                "1",
+                "-i",
+                &raw_pcm_str,
+            ]);
+            if export_wav {
+                ffmpeg_cmd.args(["-c:a", "pcm_s16le"]);
+            } else {
+                ffmpeg_cmd.args(["-c:a", "libmp3lame", "-b:a", &bitrate_str]);
+            }
+            ffmpeg_cmd.arg(&output_audio_str);
+            ffmpeg_cmd.output()
+        })
+        .await
+        .map_err(|e| DomainError::Internal(format!("FFmpeg export task failed: {}", e)))?
+        .map_err(|e| {
             DomainError::Internal(format!("Failed to execute FFmpeg for export: {}", e))
         })?;
 
@@ -915,25 +941,32 @@ impl PipelineOrchestrator {
         let mut dubbed_video_path = None;
         if job.source_audio.format.is_video() {
             let video_output = job_dir.join("dubbed_video.mp4");
-            let mux_status = std::process::Command::new("ffmpeg")
-                .args([
-                    "-y",
-                    "-i",
-                    job.source_audio.path.to_str().unwrap_or_default(),
-                    "-i",
-                    output_audio_path.to_str().unwrap_or_default(),
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "1:a:0",
-                    "-c:v",
-                    "copy",
-                    "-c:a",
-                    "aac",
-                    "-shortest",
-                    video_output.to_str().unwrap_or_default(),
-                ])
-                .output();
+            let src_str = path_to_str(&job.source_audio.path)?;
+            let out_str = path_to_str(&output_audio_path)?;
+            let vid_str = path_to_str(&video_output)?;
+            let mux_status = tokio::task::spawn_blocking(move || {
+                std::process::Command::new("ffmpeg")
+                    .args([
+                        "-y",
+                        "-i",
+                        &src_str,
+                        "-i",
+                        &out_str,
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "1:a:0",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-shortest",
+                        &vid_str,
+                    ])
+                    .output()
+            })
+            .await
+            .map_err(|e| DomainError::Internal(format!("FFmpeg mux task failed: {}", e)))?;
 
             if let Ok(res) = mux_status {
                 if res.status.success() && video_output.exists() {
@@ -953,15 +986,34 @@ impl PipelineOrchestrator {
                 job.target_language.as_str()
             ));
 
-            let max_lines = live_res.input_transcripts.len().max(live_res.output_transcripts.len());
+            let max_lines = live_res
+                .input_transcripts
+                .len()
+                .max(live_res.output_transcripts.len());
             for i in 0..max_lines {
-                let orig = live_res.input_transcripts.get(i).map(|s| s.as_str()).unwrap_or("");
-                let trans = live_res.output_transcripts.get(i).map(|s| s.as_str()).unwrap_or("");
+                let orig = live_res
+                    .input_transcripts
+                    .get(i)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                let trans = live_res
+                    .output_transcripts
+                    .get(i)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 if !orig.is_empty() {
-                    script_content.push_str(&format!("[{}] {}\n", job.source_language.as_str(), orig));
+                    script_content.push_str(&format!(
+                        "[{}] {}\n",
+                        job.source_language.as_str(),
+                        orig
+                    ));
                 }
                 if !trans.is_empty() {
-                    script_content.push_str(&format!("[{}] {}\n\n", job.target_language.as_str(), trans));
+                    script_content.push_str(&format!(
+                        "[{}] {}\n\n",
+                        job.target_language.as_str(),
+                        trans
+                    ));
                 }
             }
 

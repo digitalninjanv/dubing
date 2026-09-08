@@ -12,7 +12,6 @@ use crate::infrastructure::gemini::{
 };
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 

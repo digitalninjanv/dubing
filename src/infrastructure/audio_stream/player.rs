@@ -16,7 +16,8 @@ impl AudioStreamPlayer {
         mut pcm_rx: Receiver<Vec<u8>>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
-        let is_default = sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" || sink_name == "default";
+        let is_default =
+            sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" || sink_name == "default";
         let effective_sink = if is_default { "default" } else { sink_name };
 
         let use_pw_cat = Command::new("pw-cat")
@@ -26,14 +27,29 @@ impl AudioStreamPlayer {
             .map(|o| o.status.success())
             .unwrap_or(false);
 
-        let backend = if use_pw_cat { "PipeWire" } else { "PulseAudio/pipewire-pulse fallback" };
-        info!("Starting live playback to '{}' using {} backend", effective_sink, backend);
+        let backend = if use_pw_cat {
+            "PipeWire"
+        } else {
+            "PulseAudio/pipewire-pulse fallback"
+        };
+        info!(
+            "Starting live playback to '{}' using {} backend",
+            effective_sink, backend
+        );
 
         let mut child = if use_pw_cat {
             let mut cmd = Command::new("pw-cat");
             cmd.args([
-                "--playback", "--raw", "--rate", "24000", "--channels", "1",
-                "--format", "s16", "--latency", "20ms",
+                "--playback",
+                "--raw",
+                "--rate",
+                "24000",
+                "--channels",
+                "1",
+                "--format",
+                "s16",
+                "--latency",
+                "20ms",
             ]);
             if !is_default {
                 cmd.args(["--target", effective_sink]);
@@ -42,18 +58,43 @@ impl AudioStreamPlayer {
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|e| DomainError::Internal(format!("Failed to spawn PipeWire playback (pw-cat): {}", e)))?
+                .map_err(|e| {
+                    DomainError::Internal(format!(
+                        "Failed to spawn PipeWire playback (pw-cat): {}",
+                        e
+                    ))
+                })?
         } else {
             Command::new("ffmpeg")
                 .args([
-                    "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
-                    "-flags", "low_delay", "-f", "s16le", "-ar", "24000", "-ac", "1",
-                    "-i", "-", "-f", "pulse", effective_sink,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-fflags",
+                    "nobuffer",
+                    "-flags",
+                    "low_delay",
+                    "-f",
+                    "s16le",
+                    "-ar",
+                    "24000",
+                    "-ac",
+                    "1",
+                    "-i",
+                    "-",
+                    "-f",
+                    "pulse",
+                    effective_sink,
                 ])
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|e| DomainError::Internal(format!("Failed to spawn FFmpeg playback fallback: {}", e)))?
+                .map_err(|e| {
+                    DomainError::Internal(format!(
+                        "Failed to spawn FFmpeg playback fallback: {}",
+                        e
+                    ))
+                })?
         };
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;

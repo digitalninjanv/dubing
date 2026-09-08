@@ -49,7 +49,9 @@ impl std::fmt::Display for DubbingEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Studio => write!(f, "Studio Multi-Stage"),
-            Self::LiveTranslate => write!(f, "Live Fast Translate (gemini-3.5-live-translate-preview)"),
+            Self::LiveTranslate => {
+                write!(f, "Live Fast Translate (gemini-3.5-live-translate-preview)")
+            }
         }
     }
 }

@@ -144,7 +144,10 @@ Transcript segments:
         let mut last_err = None;
         for (i, &model) in candidates.iter().enumerate() {
             if i > 0 {
-                tracing::info!("Fallback cascade: attempting translation with model '{}'", model);
+                tracing::info!(
+                    "Fallback cascade: attempting translation with model '{}'",
+                    model
+                );
             }
 
             let endpoint = format!(
@@ -158,6 +161,7 @@ Transcript segments:
             let target_endpoint = endpoint.clone();
             let cli = http_client.clone();
             let bytes = body_bytes.clone();
+            let api_key = self.client.api_key().to_string();
 
             let response = match self
                 .client
@@ -165,9 +169,11 @@ Transcript segments:
                     let c = cli.clone();
                     let u = target_endpoint.clone();
                     let b = bytes.clone();
+                    let k = api_key.clone();
                     async move {
                         c.post(&u)
                             .header("Content-Type", "application/json")
+                            .header("x-goog-api-key", k)
                             .body(b)
                             .send()
                             .await
@@ -222,21 +228,22 @@ Transcript segments:
                 })?;
 
             // Parse structured JSON output
-            let parsed_translations: TranslationResponsePayload = serde_json::from_str(&text_content)
-                .or_else(|_| {
-                    // Fallback: try parsing as a direct array if the wrapper was omitted
-                    serde_json::from_str::<Vec<RawTranslatedItem>>(&text_content).map(|items| {
-                        TranslationResponsePayload {
-                            translations: items,
-                        }
+            let parsed_translations: TranslationResponsePayload =
+                serde_json::from_str(&text_content)
+                    .or_else(|_| {
+                        // Fallback: try parsing as a direct array if the wrapper was omitted
+                        serde_json::from_str::<Vec<RawTranslatedItem>>(&text_content).map(|items| {
+                            TranslationResponsePayload {
+                                translations: items,
+                            }
+                        })
                     })
-                })
-                .map_err(|e| {
-                    DomainError::PermanentApiError(format!(
-                        "Failed to parse JSON translation structure: {}. Response: {}",
-                        e, text_content
-                    ))
-                })?;
+                    .map_err(|e| {
+                        DomainError::PermanentApiError(format!(
+                            "Failed to parse JSON translation structure: {}. Response: {}",
+                            e, text_content
+                        ))
+                    })?;
 
             return Ok(parsed_translations.translations);
         }
@@ -272,13 +279,31 @@ impl TextTranslator for GeminiTranslator {
                 raw_translations.extend(chunk_items);
             }
         } else {
-            // Translate chunks concurrently over multiplexed HTTP/2 connection
-            let chunk_futures: Vec<_> = chunks
+            // Bounded concurrency (3) to avoid burst 429s on large transcripts;
+            // preserves input order via indexed results (chunks are cloned to
+            // satisfy 'static bounds of the concurrent stream).
+            use futures::stream::{self, StreamExt};
+            let indexed: Vec<(usize, Vec<TranscriptSegment>)> = chunks
                 .iter()
-                .map(|chunk| self.translate_chunk(chunk, target_lang, tone))
+                .enumerate()
+                .map(|(i, c)| (i, c.to_vec()))
                 .collect();
-            let results = futures::future::try_join_all(chunk_futures).await?;
-            for chunk_items in results {
+            let mut stream = stream::iter(indexed)
+                .map(|(i, chunk)| {
+                    let target = target_lang.clone();
+                    async move {
+                        let items = self.translate_chunk(&chunk, &target, tone).await?;
+                        Ok::<_, DomainError>((i, items))
+                    }
+                })
+                .buffer_unordered(3);
+            let mut ordered: Vec<(usize, Vec<RawTranslatedItem>)> =
+                Vec::with_capacity(chunks.len());
+            while let Some(res) = stream.next().await {
+                ordered.push(res?);
+            }
+            ordered.sort_by_key(|(i, _)| *i);
+            for (_, chunk_items) in ordered {
                 raw_translations.extend(chunk_items);
             }
         }

@@ -196,7 +196,7 @@ impl GeminiLiveStreamer {
                     let _ = ws_sender.close().await;
                     return Err(DomainError::TransientError(format!(
                         "Timed out waiting for Gemini Live API setupComplete (25s). Last server payload: {}. \
-Check API key Live access, model availability, and network to generativelanguage.googleapis.com",
+            Check API key Live access, model availability, and network to generativelanguage.googleapis.com",
                         detail
                     )));
                 }
@@ -366,7 +366,10 @@ Check API key Live access, model availability, and network to generativelanguage
             }
         }
 
-        info!("Live streaming session completed. Total audio chunks sent: {}", chunks_sent);
+        info!(
+            "Live streaming session completed. Total audio chunks sent: {}",
+            chunks_sent
+        );
         Ok(())
     }
 
@@ -387,20 +390,29 @@ Check API key Live access, model availability, and network to generativelanguage
                 .and_then(|m| m.as_str())
                 .unwrap_or("Unknown Live API error");
             let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-            error!("Gemini Live API handshake rejected: {} (code {})", msg, code);
+            error!(
+                "Gemini Live API handshake rejected: {} (code {})",
+                msg, code
+            );
             let _ = ws_sender.close().await;
             if code == 429 {
                 return Err(DomainError::TransientError(format!(
-                    "Live API rate limited (429): {}", msg
+                    "Live API rate limited (429): {}",
+                    msg
                 )));
             } else {
                 return Err(DomainError::PermanentApiError(format!(
-                    "Live API setup rejected: {} (code {})", msg, code
+                    "Live API setup rejected: {} (code {})",
+                    msg, code
                 )));
             }
         }
 
-        if parsed.get("setupComplete").or_else(|| parsed.get("setup_complete")).is_some() {
+        if parsed
+            .get("setupComplete")
+            .or_else(|| parsed.get("setup_complete"))
+            .is_some()
+        {
             return Ok(Some(true));
         }
 

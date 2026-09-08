@@ -16,7 +16,8 @@ impl AudioStreamCapture {
         chunk_tx: Sender<Vec<u8>>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
-        let is_default = source_name.is_empty() || source_name == "@DEFAULT_SOURCE@" || source_name == "default";
+        let is_default =
+            source_name.is_empty() || source_name == "@DEFAULT_SOURCE@" || source_name == "default";
         let effective_source = if is_default { "default" } else { source_name };
 
         let use_pw_cat = Command::new("pw-cat")
@@ -26,14 +27,29 @@ impl AudioStreamCapture {
             .map(|o| o.status.success())
             .unwrap_or(false);
 
-        let backend = if use_pw_cat { "PipeWire" } else { "PulseAudio/pipewire-pulse fallback" };
-        info!("Starting live capture from '{}' using {} backend", effective_source, backend);
+        let backend = if use_pw_cat {
+            "PipeWire"
+        } else {
+            "PulseAudio/pipewire-pulse fallback"
+        };
+        info!(
+            "Starting live capture from '{}' using {} backend",
+            effective_source, backend
+        );
 
         let mut child = if use_pw_cat {
             let mut cmd = Command::new("pw-cat");
             cmd.args([
-                "--record", "--raw", "--rate", "16000", "--channels", "1",
-                "--format", "s16", "--latency", "20ms",
+                "--record",
+                "--raw",
+                "--rate",
+                "16000",
+                "--channels",
+                "1",
+                "--format",
+                "s16",
+                "--latency",
+                "20ms",
             ]);
             if !is_default {
                 cmd.args(["--target", effective_source]);
@@ -42,19 +58,45 @@ impl AudioStreamCapture {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|e| DomainError::Internal(format!("Failed to spawn PipeWire capture (pw-cat): {}", e)))?
+                .map_err(|e| {
+                    DomainError::Internal(format!(
+                        "Failed to spawn PipeWire capture (pw-cat): {}",
+                        e
+                    ))
+                })?
         } else {
             Command::new("ffmpeg")
                 .args([
-                    "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
-                    "-flags", "low_delay", "-f", "pulse", "-i", effective_source,
-                    "-vn", "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1",
-                    "-ar", "16000", "-flush_packets", "1", "-",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-fflags",
+                    "nobuffer",
+                    "-flags",
+                    "low_delay",
+                    "-f",
+                    "pulse",
+                    "-i",
+                    effective_source,
+                    "-vn",
+                    "-f",
+                    "s16le",
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-flush_packets",
+                    "1",
+                    "-",
                 ])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map_err(|e| DomainError::Internal(format!("Failed to spawn FFmpeg capture fallback: {}", e)))?
+                .map_err(|e| {
+                    DomainError::Internal(format!("Failed to spawn FFmpeg capture fallback: {}", e))
+                })?
         };
 
         tokio::time::sleep(std::time::Duration::from_millis(120)).await;

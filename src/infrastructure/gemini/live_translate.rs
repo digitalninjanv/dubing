@@ -28,12 +28,18 @@ impl GeminiLiveTranslator {
     }
 
     /// Converts input media file to raw 16-bit 16kHz PCM (mono, little-endian) using FFmpeg.
-    fn convert_to_pcm_16k(&self, input_path: &Path, output_pcm: &Path) -> Result<(), DomainError> {
+    fn convert_to_pcm_16k(input_path: &Path, output_pcm: &Path) -> Result<(), DomainError> {
+        let input_str = input_path.to_str().ok_or_else(|| {
+            DomainError::Internal("Input media path contains non-UTF8 characters".to_string())
+        })?;
+        let output_str = output_pcm.to_str().ok_or_else(|| {
+            DomainError::Internal("Output PCM path contains non-UTF8 characters".to_string())
+        })?;
         let status = std::process::Command::new("ffmpeg")
             .args([
                 "-y",
                 "-i",
-                input_path.to_str().unwrap_or_default(),
+                input_str,
                 "-vn",
                 "-f",
                 "s16le",
@@ -43,7 +49,7 @@ impl GeminiLiveTranslator {
                 "1",
                 "-ar",
                 "16000",
-                output_pcm.to_str().unwrap_or_default(),
+                output_str,
             ])
             .output()
             .map_err(|e| DomainError::Internal(format!("Failed to spawn ffmpeg: {}", e)))?;
@@ -79,9 +85,14 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
             "Converting audio to 16kHz PCM for Gemini Live Translate: {}",
             input_path.display()
         );
-        self.convert_to_pcm_16k(input_path, &input_pcm_path)?;
+        let conv_in = input_path.to_path_buf();
+        let conv_out = input_pcm_path.clone();
+        tokio::task::spawn_blocking(move || Self::convert_to_pcm_16k(&conv_in, &conv_out))
+            .await
+            .map_err(|e| DomainError::Internal(format!("PCM conversion task failed: {}", e)))??;
 
-        let pcm_bytes = std::fs::read(&input_pcm_path)
+        let pcm_bytes = tokio::fs::read(&input_pcm_path)
+            .await
             .map_err(|e| DomainError::Internal(format!("Failed to read raw PCM file: {}", e)))?;
 
         if pcm_bytes.is_empty() {
@@ -102,7 +113,10 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
         );
 
         let (ws_stream, _) = connect_async(&ws_url).await.map_err(|e| {
-            DomainError::TransientError(format!("Gemini Live API WebSocket connection failed: {}", e))
+            DomainError::TransientError(format!(
+                "Gemini Live API WebSocket connection failed: {}",
+                e
+            ))
         })?;
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
@@ -220,12 +234,21 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                                     }
                                 }
 
-                                if let Some(server_content) = parsed.get("serverContent") {
+                                if let Some(server_content) = parsed
+                                    .get("serverContent")
+                                    .or_else(|| parsed.get("server_content"))
+                                {
                                     // 1. Extract audio parts
-                                    if let Some(model_turn) = server_content.get("modelTurn") {
+                                    if let Some(model_turn) = server_content
+                                        .get("modelTurn")
+                                        .or_else(|| server_content.get("model_turn"))
+                                    {
                                         if let Some(parts) = model_turn.get("parts").and_then(|p| p.as_array()) {
                                             for part in parts {
-                                                if let Some(inline_data) = part.get("inlineData") {
+                                                if let Some(inline_data) = part
+                                                    .get("inlineData")
+                                                    .or_else(|| part.get("inline_data"))
+                                                {
                                                     if let Some(b64_audio) = inline_data.get("data").and_then(|d| d.as_str()) {
                                                         if let Ok(audio_bytes) = base64::engine::general_purpose::STANDARD.decode(b64_audio.trim()) {
                                                             let _ = output_file.write_all(&audio_bytes);
@@ -243,7 +266,12 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                                     }
 
                                     // 2. Extract input transcription
-                                    if let Some(input_tx) = server_content.get("inputTranscription").and_then(|t| t.get("text")).and_then(|s| s.as_str()) {
+                                    if let Some(input_tx) = server_content
+                                        .get("inputTranscription")
+                                        .or_else(|| server_content.get("input_transcription"))
+                                        .and_then(|t| t.get("text"))
+                                        .and_then(|s| s.as_str())
+                                    {
                                         let trimmed = input_tx.trim();
                                         if !trimmed.is_empty() && !input_transcripts.iter().any(|t| t == trimmed) {
                                             input_transcripts.push(trimmed.to_string());
@@ -251,7 +279,12 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                                     }
 
                                     // 3. Extract output transcription
-                                    if let Some(output_tx) = server_content.get("outputTranscription").and_then(|t| t.get("text")).and_then(|s| s.as_str()) {
+                                    if let Some(output_tx) = server_content
+                                        .get("outputTranscription")
+                                        .or_else(|| server_content.get("output_transcription"))
+                                        .and_then(|t| t.get("text"))
+                                        .and_then(|s| s.as_str())
+                                    {
                                         let trimmed = output_tx.trim();
                                         if !trimmed.is_empty() && !output_transcripts.iter().any(|t| t == trimmed) {
                                             output_transcripts.push(trimmed.to_string());
@@ -259,7 +292,12 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
                                     }
 
                                     // 4. Check for turn completion
-                                    if server_content.get("turnComplete").and_then(|tc| tc.as_bool()) == Some(true) {
+                                    if server_content
+                                        .get("turnComplete")
+                                        .or_else(|| server_content.get("turn_complete"))
+                                        .and_then(|tc| tc.as_bool())
+                                        == Some(true)
+                                    {
                                         debug!("Live Translate turnComplete received from server");
                                         if sender_done {
                                             turn_completed = true;

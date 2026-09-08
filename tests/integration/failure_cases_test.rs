@@ -352,8 +352,14 @@ async fn test_gemini_client_retry_status_callback() {
     assert_eq!(response.status().as_u16(), 200);
 
     let msgs = callback_messages.lock().unwrap().clone();
-    assert!(!msgs.is_empty(), "Status callback should have received progress messages");
-    assert!(msgs[0].contains("429") || msgs[0].contains("rate limit"), "Message should mention 429/rate limit");
+    assert!(
+        !msgs.is_empty(),
+        "Status callback should have received progress messages"
+    );
+    assert!(
+        msgs[0].contains("429") || msgs[0].contains("rate limit"),
+        "Message should mention 429/rate limit"
+    );
 }
 
 #[tokio::test]
@@ -367,8 +373,12 @@ async fn test_gemini_synthesizer_fallback_to_25_flash_tts() {
 
     // 1. Primary model fails (404)
     Mock::given(method("POST"))
-        .and(path("/v1beta/models/gemini-3.1-flash-tts-preview:generateContent"))
-        .respond_with(ResponseTemplate::new(404).set_body_string("{\"error\": \"Model not found\"}"))
+        .and(path(
+            "/v1beta/models/gemini-3.1-flash-tts-preview:generateContent",
+        ))
+        .respond_with(
+            ResponseTemplate::new(404).set_body_string("{\"error\": \"Model not found\"}"),
+        )
         .mount(&server)
         .await;
 
@@ -394,7 +404,9 @@ async fn test_gemini_synthesizer_fallback_to_25_flash_tts() {
 
     // 2. Fallback model succeeds (200)
     Mock::given(method("POST"))
-        .and(path("/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"))
+        .and(path(
+            "/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(&tts_response))
         .mount(&server)
         .await;
@@ -477,6 +489,3 @@ async fn test_gemini_client_test_connection() {
 
     assert_eq!(err, audiodub::domain::DomainError::AuthenticationFailed);
 }
-
-
-

@@ -40,7 +40,8 @@ fn test_audio_format_extensions() {
     assert_eq!(AudioFormat::from_extension("m4a"), Some(AudioFormat::M4a));
     assert_eq!(AudioFormat::from_extension("xyz"), None);
 
-    assert_eq!(AudioFormat::Mp3.mime_type(), "audio/mp3");
+    assert_eq!(AudioFormat::Mp3.mime_type(), "audio/mpeg");
+    assert_eq!(AudioFormat::M4a.mime_type(), "audio/mp4");
 }
 
 #[test]
@@ -323,5 +324,3 @@ fn test_speaker_voice_config_resolution() {
     assert_eq!(config.get_voice_for(Some("Speaker 2")), Some("Aoede"));
     assert_eq!(config.get_voice_for(None), Some("Puck"));
 }
-
-

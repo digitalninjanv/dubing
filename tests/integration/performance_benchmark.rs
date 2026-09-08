@@ -80,8 +80,8 @@ use async_trait::async_trait;
 use audiodub::application::ports::{SpeechSynthesizer, SpeechTranscriber, TextTranslator};
 use audiodub::application::PipelineOrchestrator;
 use audiodub::domain::{
-    AudioDocument, DomainError, Job, LanguageId,
-    Transcript, TranslatedDocument, TranslationSegment, VoiceProfile,
+    AudioDocument, DomainError, Job, LanguageId, Transcript, TranslatedDocument,
+    TranslationSegment, VoiceProfile,
 };
 use audiodub::infrastructure::filesystem::FileJobRepository;
 use std::path::Path;
@@ -91,7 +91,11 @@ use tokio_util::sync::CancellationToken;
 struct BenchTranscriber(Vec<TranscriptSegment>);
 #[async_trait]
 impl SpeechTranscriber for BenchTranscriber {
-    async fn transcribe(&self, _audio: &AudioDocument, _hint: &LanguageId) -> Result<Transcript, DomainError> {
+    async fn transcribe(
+        &self,
+        _audio: &AudioDocument,
+        _hint: &LanguageId,
+    ) -> Result<Transcript, DomainError> {
         Ok(Transcript::new(LanguageId::new("id"), self.0.clone()))
     }
 }
@@ -127,7 +131,17 @@ impl SpeechSynthesizer for LatencyMockSynthesizer {
         tokio::time::sleep(tokio::time::Duration::from_millis(self.latency_ms)).await;
         // Generate a real lightweight 1-second WAV
         let _ = Command::new("ffmpeg")
-            .args(["-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "pcm_s16le", "-ar", "24000"])
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-c:a",
+                "pcm_s16le",
+                "-ar",
+                "24000",
+            ])
             .arg(output_path)
             .output();
 
@@ -147,7 +161,17 @@ async fn benchmark_pipeline_concurrent_synthesis_ten_segments() {
 
     // Generate real 20-second audio
     let _ = Command::new("ffmpeg")
-        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=20", "-c:a", "libmp3lame", "-b:a", "128k"])
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=20",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+        ])
         .arg(&sample_mp3)
         .output()
         .expect("ffmpeg failed");

@@ -76,12 +76,9 @@ impl GeminiClient {
         }
 
         let url = format!("{}/v1beta/models?key={}", self.base_url, self.api_key);
-        let resp = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| DomainError::TransientError(format!("Network connection failed: {}", e)))?;
+        let resp = self.http.get(&url).send().await.map_err(|e| {
+            DomainError::TransientError(format!("Network connection failed: {}", e))
+        })?;
 
         let status = resp.status();
         if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
@@ -109,9 +106,10 @@ impl GeminiClient {
             models: Option<Vec<ModelItem>>,
         }
 
-        let parsed: ModelsListResponse = resp.json().await.map_err(|e| {
-            DomainError::Internal(format!("Failed to parse models JSON: {}", e))
-        })?;
+        let parsed: ModelsListResponse = resp
+            .json()
+            .await
+            .map_err(|e| DomainError::Internal(format!("Failed to parse models JSON: {}", e)))?;
 
         let model_names = parsed
             .models
@@ -169,7 +167,8 @@ impl GeminiClient {
                             let jitter_ms = (std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
-                                .subsec_nanos() as u64
+                                .subsec_nanos()
+                                as u64
                                 % 400)
                                 + 100;
                             base_delay * 1000 + jitter_ms
@@ -206,7 +205,9 @@ impl GeminiClient {
                             if let Some(ref cb) = self.status_callback {
                                 cb(&format!(
                                     "Retrying {} (attempt {}/{})...",
-                                    operation_name, current_attempt + 1, total_attempts
+                                    operation_name,
+                                    current_attempt + 1,
+                                    total_attempts
                                 ));
                             }
                         }
@@ -251,7 +252,9 @@ impl GeminiClient {
                             if let Some(ref cb) = self.status_callback {
                                 cb(&format!(
                                     "Reconnecting {} (attempt {}/{})...",
-                                    operation_name, current_attempt + 1, total_attempts
+                                    operation_name,
+                                    current_attempt + 1,
+                                    total_attempts
                                 ));
                             }
                         }

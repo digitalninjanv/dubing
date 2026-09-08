@@ -161,9 +161,9 @@ Respond with ONLY a valid JSON object matching this schema:
                         "role": "user",
                         "parts": [
                             {
-                                "file_data": {
-                                    "file_uri": file_info.uri,
-                                    "mime_type": audio.mime_type
+                                "fileData": {
+                                    "fileUri": file_info.uri,
+                                    "mimeType": audio.mime_type
                                 }
                             },
                             {
@@ -338,8 +338,8 @@ Respond with ONLY a valid JSON object matching this schema:
                     "role": "user",
                     "parts": [
                         {
-                            "inline_data": {
-                                "mime_type": audio.mime_type,
+                            "inlineData": {
+                                "mimeType": audio.mime_type,
                                 "data": b64_audio
                             }
                         },

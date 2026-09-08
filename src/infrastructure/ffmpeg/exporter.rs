@@ -32,8 +32,12 @@ impl FfmpegExporter {
         })?;
 
         for seg in segments {
-            // Use absolute canonicalized path or plain string with safe escaping
-            let path_str = seg.to_string_lossy().replace('\'', "'\\''");
+            // Prefer canonical absolute paths for concat demuxer stability;
+            // fall back to the raw path string with quote escaping.
+            let abs = std::fs::canonicalize(seg)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| seg.to_string_lossy().into_owned());
+            let path_str = abs.replace('\'', "'\\''");
             writeln!(list_file, "file '{}'", path_str).map_err(|e| {
                 DomainError::ExportError(format!("Failed to write concat list: {}", e))
             })?;
@@ -143,14 +147,7 @@ impl FfmpegExporter {
         }
 
         cmd.args([
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
+            "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0",
         ]);
 
         if has_subtitles {
@@ -258,10 +255,7 @@ impl FfmpegExporter {
     }
 
     /// Extract audio track from video into an optimized, lightweight MP3 audio file for STT/AI ingestion
-    pub fn extract_audio(
-        video_input: &Path,
-        output_audio: &Path,
-    ) -> Result<PathBuf, DomainError> {
+    pub fn extract_audio(video_input: &Path, output_audio: &Path) -> Result<PathBuf, DomainError> {
         let mut cmd = Command::new("ffmpeg");
         cmd.args(["-y", "-i"])
             .arg(video_input)

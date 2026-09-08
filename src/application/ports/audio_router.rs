@@ -17,7 +17,8 @@ pub trait AudioRouter: Send + Sync {
     async fn list_sink_inputs(&self) -> Result<Vec<AudioAppInfo>, DomainError>;
 
     /// Moves an application's audio playback to the specified sink (e.g. "AudioDub_Virtual_Sink").
-    async fn move_sink_input(&self, sink_input_id: u32, sink_name: &str) -> Result<(), DomainError>;
+    async fn move_sink_input(&self, sink_input_id: u32, sink_name: &str)
+        -> Result<(), DomainError>;
 
     /// Restores an application's audio playback to the default hardware sink.
     async fn restore_sink_input(&self, sink_input_id: u32) -> Result<(), DomainError>;

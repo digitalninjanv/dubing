@@ -119,9 +119,9 @@ impl AudioAppInfo {
             "epiphany", "webkit", "zen", "youtube", "browser", "gecko",
         ];
 
-        BROWSER_KEYWORDS.iter().any(|&k| {
-            app_lower.contains(k) || bin_lower.contains(k) || media_lower.contains(k)
-        })
+        BROWSER_KEYWORDS
+            .iter()
+            .any(|&k| app_lower.contains(k) || bin_lower.contains(k) || media_lower.contains(k))
     }
 }
 

@@ -15,4 +15,3 @@ pub use secret_store::SecretStore;
 pub use synthesizer::SpeechSynthesizer;
 pub use transcriber::SpeechTranscriber;
 pub use translator::TextTranslator;
-

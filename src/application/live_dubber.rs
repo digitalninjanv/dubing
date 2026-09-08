@@ -28,10 +28,7 @@ pub struct LiveDubberOrchestrator {
 }
 
 impl LiveDubberOrchestrator {
-    pub fn new(
-        audio_router: Arc<dyn AudioRouter>,
-        live_streamer: Arc<GeminiLiveStreamer>,
-    ) -> Self {
+    pub fn new(audio_router: Arc<dyn AudioRouter>, live_streamer: Arc<GeminiLiveStreamer>) -> Self {
         Self {
             audio_router,
             live_streamer,
@@ -68,7 +65,11 @@ impl LiveDubberOrchestrator {
                 info!("Setting up null sink to silence original YouTube/browser audio...");
 
                 if self.audio_router.is_available().await {
-                    match self.audio_router.create_null_sink(&self.virtual_sink_name).await {
+                    match self
+                        .audio_router
+                        .create_null_sink(&self.virtual_sink_name)
+                        .await
+                    {
                         Ok(mod_id) => {
                             created_module_id = Some(mod_id);
                             // PipeWire + pipewire-pulse needs longer settle time for
@@ -110,7 +111,10 @@ impl LiveDubberOrchestrator {
                                                             app.application_name, app.sink_input_id
                                                         );
                                                         if watcher_router
-                                                            .move_sink_input(app.sink_input_id, &watcher_sink)
+                                                            .move_sink_input(
+                                                                app.sink_input_id,
+                                                                &watcher_sink,
+                                                            )
                                                             .await
                                                             .is_ok()
                                                         {
@@ -166,7 +170,8 @@ impl LiveDubberOrchestrator {
 
             // 1. Start audio capture worker
             info!("Starting live capture worker on: {}", capture_source);
-            AudioStreamCapture::start_capture(&capture_source, input_tx, cancel_token.clone()).await?;
+            AudioStreamCapture::start_capture(&capture_source, input_tx, cancel_token.clone())
+                .await?;
 
             // 2. Start audio playback worker
             if options.model_choice.is_audio_output() {
@@ -176,7 +181,8 @@ impl LiveDubberOrchestrator {
                     .await
                     .unwrap_or_else(|_| "default".to_string());
                 info!("Starting live playback worker on: {}", target_sink);
-                AudioStreamPlayer::start_playback(&target_sink, output_rx, cancel_token.clone()).await?;
+                AudioStreamPlayer::start_playback(&target_sink, output_rx, cancel_token.clone())
+                    .await?;
             }
 
             // 3. Spawn transcript listener

@@ -258,9 +258,22 @@ async fn test_ffmpeg_video_audio_extraction() {
     // Generate a synthetic 2-second MP4 test video with audio using lavfi testsrc and sine
     let status = Command::new("ffmpeg")
         .arg("-y")
-        .args(["-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30"])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=30",
+        ])
         .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2"])
-        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        .args([
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ])
         .arg(&video_mp4)
         .status()
         .expect("Failed to execute ffmpeg for test video generation");
@@ -298,7 +311,15 @@ async fn test_ffmpeg_mix_with_ducking() {
 
     // Generate 2s background audio
     let status_bg = Command::new("ffmpeg")
-        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=2", "-c:a", "pcm_s16le"])
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=220:duration=2",
+            "-c:a",
+            "pcm_s16le",
+        ])
         .arg(&bg_audio)
         .status()
         .expect("Failed to generate background audio");
@@ -306,7 +327,15 @@ async fn test_ffmpeg_mix_with_ducking() {
 
     // Generate 1s voiceover audio
     let status_v = Command::new("ffmpeg")
-        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=1", "-c:a", "pcm_s16le"])
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=1",
+            "-c:a",
+            "pcm_s16le",
+        ])
         .arg(&voice_audio)
         .status()
         .expect("Failed to generate voice audio");
@@ -337,9 +366,23 @@ async fn test_ffmpeg_video_remux_with_soft_subtitles() {
 
     // Generate 2s test video
     let status_vid = Command::new("ffmpeg")
-        .args(["-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30"])
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=30",
+        ])
         .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2"])
-        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        .args([
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ])
         .arg(&video_mp4)
         .status()
         .expect("Failed to create test video");
@@ -347,7 +390,15 @@ async fn test_ffmpeg_video_remux_with_soft_subtitles() {
 
     // Generate 2s dubbed audio
     let status_aud = Command::new("ffmpeg")
-        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=500:duration=2", "-c:a", "libmp3lame"])
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=500:duration=2",
+            "-c:a",
+            "libmp3lame",
+        ])
         .arg(&audio_mp3)
         .status()
         .expect("Failed to create test audio");
@@ -377,5 +428,3 @@ async fn test_ffmpeg_video_remux_with_soft_subtitles() {
     assert_eq!(doc.format, AudioFormat::Mp4);
     assert!(doc.metadata.duration_ms >= 1800);
 }
-
-
