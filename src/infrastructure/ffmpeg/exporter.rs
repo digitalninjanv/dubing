@@ -121,29 +121,63 @@ impl FfmpegExporter {
         })
     }
 
-    /// Remux original video stream with new dubbed audio track
+    /// Remux original video stream with new dubbed audio track and optional embedded soft subtitles
     pub fn remux_video(
         video_input: &Path,
         audio_input: &Path,
+        subtitle_input: Option<&Path>,
+        subtitle_language: Option<&str>,
         output_video: &Path,
     ) -> Result<PathBuf, DomainError> {
         let mut cmd = Command::new("ffmpeg");
         cmd.args(["-y", "-i"])
             .arg(video_input)
             .arg("-i")
-            .arg(audio_input)
-            .args([
-                "-c:v",
-                "copy",
-                "-c:a",
-                "aac",
-                "-map",
-                "0:v:0",
-                "-map",
-                "1:a:0",
-                "-shortest",
-            ])
-            .arg(output_video);
+            .arg(audio_input);
+
+        let has_subtitles = subtitle_input.map(|p| p.exists()).unwrap_or(false);
+        if let Some(sub_path) = subtitle_input {
+            if has_subtitles {
+                cmd.arg("-i").arg(sub_path);
+            }
+        }
+
+        cmd.args([
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+        ]);
+
+        if has_subtitles {
+            cmd.args(["-map", "2:s:0"]);
+            let ext = output_video
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("mp4")
+                .to_lowercase();
+
+            if ext == "mkv" || ext == "webm" {
+                cmd.args(["-c:s", "srt"]);
+            } else {
+                // MP4 / MOV standard closed captions
+                cmd.args(["-c:s", "mov_text"]);
+            }
+
+            let lang = subtitle_language.unwrap_or("und");
+            cmd.args([
+                "-metadata:s:s:0",
+                &format!("language={}", lang),
+                "-metadata:s:s:0",
+                "title=Dubbed Subtitles",
+            ]);
+        }
+
+        cmd.arg("-shortest").arg(output_video);
 
         let output = cmd.output().map_err(|e| {
             DomainError::ExportError(format!("Failed to execute ffmpeg remux: {}", e))
@@ -165,6 +199,62 @@ impl FfmpegExporter {
         }
 
         Ok(output_video.to_path_buf())
+    }
+
+    /// Dynamically ducks background audio under a voiceover track using FFmpeg sidechaincompress
+    pub fn mix_with_ducking(
+        background_audio: &Path,
+        voiceover_audio: &Path,
+        output_audio: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args(["-y", "-i"])
+            .arg(background_audio)
+            .arg("-i")
+            .arg(voiceover_audio)
+            .args([
+                "-filter_complex",
+                "[1:a]apad[sc_padded];[sc_padded]asplit=2[sc][voice];[0:a][sc]sidechaincompress=threshold=0.08:ratio=5:attack=40:release=350[bg];[bg][voice]amix=inputs=2:duration=first:dropout_transition=2[out]",
+                "-map",
+                "[out]",
+            ]);
+
+        let ext = output_audio
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("mp3")
+            .to_lowercase();
+
+        if ext == "mp3" {
+            cmd.args(["-c:a", "libmp3lame", "-b:a", "192k"]);
+        } else if ext == "wav" {
+            cmd.args(["-c:a", "pcm_s16le"]);
+        } else {
+            cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+        }
+
+        cmd.arg(output_audio);
+
+        let output = cmd.output().map_err(|e| {
+            DomainError::ExportError(format!("Failed to execute ffmpeg audio ducking: {}", e))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(DomainError::ExportError(format!(
+                "FFmpeg audio ducking failed with exit code {:?}: {}",
+                output.status.code(),
+                stderr
+            )));
+        }
+
+        if !output_audio.exists() {
+            return Err(DomainError::ExportError(
+                "Ducked audio file was not created".to_string(),
+            ));
+        }
+
+        Ok(output_audio.to_path_buf())
     }
 
     /// Extract audio track from video into an optimized, lightweight MP3 audio file for STT/AI ingestion

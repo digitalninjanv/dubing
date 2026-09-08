@@ -1,6 +1,8 @@
 use super::views::{
-    DropzoneView, HistoryView, ProgressView, ResultView, SettingsDialog, TtsStudioView,
+    DropzoneView, HistoryView, ProgressView, ResultView, ReviewTranscriptView, SettingsDialog,
+    TtsStudioView,
 };
+use crate::application::pipeline::ReviewRequest;
 use crate::application::ports::{AudioEngine, JobRepository, SecretStore};
 use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
@@ -18,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 pub enum UiMessage {
     Progress(JobProgress),
     ProgressDetail(String),
+    ReviewCheckpoint(ReviewRequest),
     Success(AudioArtifact, String, String),
     Error(DomainError),
 }
@@ -57,13 +60,25 @@ impl MainWindow {
 
         let dropzone_view = DropzoneView::new(&registry);
         let progress_view = ProgressView::new();
+        let review_view = ReviewTranscriptView::new();
         let result_view = ResultView::new();
         let history_view = HistoryView::new();
         let tts_view = TtsStudioView::new();
 
         dubbing_stack.add_named(dropzone_view.widget(), Some("dropzone"));
         dubbing_stack.add_named(progress_view.widget(), Some("progress"));
+        dubbing_stack.add_named(review_view.widget(), Some("review"));
         dubbing_stack.add_named(result_view.widget(), Some("result"));
+
+        let dubbing_stack_rev_proceed = dubbing_stack.clone();
+        review_view.connect_proceed(move || {
+            dubbing_stack_rev_proceed.set_visible_child_name("progress");
+        });
+
+        let dubbing_stack_rev_cancel = dubbing_stack.clone();
+        review_view.connect_cancelled(move || {
+            dubbing_stack_rev_cancel.set_visible_child_name("dropzone");
+        });
 
         main_stack.add_titled_with_icon(
             &dubbing_stack,
@@ -212,6 +227,7 @@ impl MainWindow {
 
         let dubbing_stack_msg = dubbing_stack.clone();
         let progress_clone_msg = progress_view.clone();
+        let review_clone_msg = review_view.clone();
         let result_clone_msg = result_view.clone();
         let toast_clone_msg = toast_overlay.clone();
         let hist_succ = history_view.clone();
@@ -225,6 +241,10 @@ impl MainWindow {
                     }
                     UiMessage::ProgressDetail(detail) => {
                         progress_clone_msg.update_detail(&detail);
+                    }
+                    UiMessage::ReviewCheckpoint(req) => {
+                        review_clone_msg.populate(req.translated, req.resume_sender);
+                        dubbing_stack_msg.set_visible_child_name("review");
                     }
                     UiMessage::Success(artifact, src_lang, tgt_lang) => {
                         result_clone_msg.set_result(&artifact, &src_lang, &tgt_lang);
@@ -292,6 +312,8 @@ impl MainWindow {
             let tone = dropzone_exec.selected_tone();
             let voice_config = dropzone_exec.selected_voice_config();
             let engine = dropzone_exec.selected_engine();
+            let duck_audio = dropzone_exec.is_ducking_enabled();
+            let review_transcript = dropzone_exec.is_review_enabled();
 
             if let Err(err_msg) = registry_exec.validate_pair(&src_lang, &tgt_lang) {
                 let toast = libadwaita::Toast::new(&err_msg);
@@ -310,12 +332,29 @@ impl MainWindow {
             let job_repo_bg = job_repo_exec.clone();
             let settings_bg = settings_exec.clone();
 
+            let (review_tx, review_rx) = async_channel::unbounded();
             let pipeline_options = PipelineOptions {
                 tone,
                 voice_config,
                 export_subtitles: true,
                 engine,
+                duck_audio,
+                review_transcript,
+                review_channel: if review_transcript {
+                    Some(review_tx)
+                } else {
+                    None
+                },
             };
+
+            if review_transcript {
+                let sender_rev = sender_clone.clone();
+                tokio::spawn(async move {
+                    while let Ok(req) = review_rx.recv().await {
+                        let _ = sender_rev.send(UiMessage::ReviewCheckpoint(req)).await;
+                    }
+                });
+            }
 
             // Spawn asynchronous job execution in Tokio background thread
             tokio::spawn(async move {

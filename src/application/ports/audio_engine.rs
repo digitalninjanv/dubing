@@ -37,12 +37,22 @@ pub trait AudioEngine: Send + Sync {
         target_duration_ms: Option<u64>,
     ) -> Result<AudioArtifact, DomainError>;
 
-    /// Remux video with new audio track
+    /// Remux video with new audio track and optional embedded soft subtitles
     async fn remux_video(
         &self,
         video_input: &Path,
         audio_input: &Path,
+        subtitle_input: Option<&Path>,
+        subtitle_language: Option<&str>,
         output_video: &Path,
+    ) -> Result<PathBuf, DomainError>;
+
+    /// Dynamically duck background audio under a voiceover track using FFmpeg sidechaincompress
+    async fn mix_with_ducking(
+        &self,
+        background_audio: &Path,
+        voiceover_audio: &Path,
+        output_audio: &Path,
     ) -> Result<PathBuf, DomainError>;
 
     /// Extract audio track from video file into an optimized audio document for AI transcription

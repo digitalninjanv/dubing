@@ -22,6 +22,26 @@ impl LanguageId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Converts language code to ISO 639-2 3-letter code for FFmpeg soft subtitle tracks
+    pub fn to_iso639_2(&self) -> &'static str {
+        match self.0.as_str() {
+            "en" => "eng",
+            "id" => "ind",
+            "es" => "spa",
+            "fr" => "fra",
+            "de" => "deu",
+            "ja" => "jpn",
+            "ko" => "kor",
+            "zh" => "zho",
+            "ar" => "ara",
+            "ru" => "rus",
+            "pt" => "por",
+            "it" => "ita",
+            "hi" => "hin",
+            _ => "und",
+        }
+    }
 }
 
 impl std::fmt::Display for LanguageId {

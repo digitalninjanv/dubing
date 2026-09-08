@@ -133,14 +133,41 @@ impl AudioEngine for FfmpegAudioEngine {
         &self,
         video_input: &Path,
         audio_input: &Path,
+        subtitle_input: Option<&Path>,
+        subtitle_language: Option<&str>,
         output_video: &Path,
     ) -> Result<PathBuf, DomainError> {
         let video_in = video_input.to_path_buf();
         let audio_in = audio_input.to_path_buf();
+        let sub_in = subtitle_input.map(|p| p.to_path_buf());
+        let lang = subtitle_language.map(|s| s.to_string());
         let video_out = output_video.to_path_buf();
 
         tokio::task::spawn_blocking(move || {
-            FfmpegExporter::remux_video(&video_in, &audio_in, &video_out)
+            FfmpegExporter::remux_video(
+                &video_in,
+                &audio_in,
+                sub_in.as_deref(),
+                lang.as_deref(),
+                &video_out,
+            )
+        })
+        .await
+        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+    }
+
+    async fn mix_with_ducking(
+        &self,
+        background_audio: &Path,
+        voiceover_audio: &Path,
+        output_audio: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        let bg_in = background_audio.to_path_buf();
+        let voice_in = voiceover_audio.to_path_buf();
+        let out = output_audio.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            FfmpegExporter::mix_with_ducking(&bg_in, &voice_in, &out)
         })
         .await
         .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?

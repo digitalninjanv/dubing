@@ -6,7 +6,7 @@ use crate::config::{AppSettings, AudioConfig};
 use crate::domain::{
     generate_bilingual_txt, generate_srt, generate_vtt, AudioArtifact, AudioFormat, DomainError,
     DubbingEngine, Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment,
-    TranslationTone, VoiceProfile,
+    Transcript, TranslatedDocument, TranslationTone, VoiceProfile,
 };
 use crate::infrastructure::filesystem::{AppPaths, CleanupManager};
 use futures::stream::{self, StreamExt};
@@ -15,12 +15,45 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone)]
+pub struct ReviewRequest {
+    pub source_transcript: Transcript,
+    pub translated: TranslatedDocument,
+    pub resume_sender:
+        Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<Option<TranslatedDocument>>>>>,
+}
+
+impl ReviewRequest {
+    pub fn new(
+        source_transcript: Transcript,
+        translated: TranslatedDocument,
+        sender: tokio::sync::oneshot::Sender<Option<TranslatedDocument>>,
+    ) -> Self {
+        Self {
+            source_transcript,
+            translated,
+            resume_sender: Arc::new(tokio::sync::Mutex::new(Some(sender))),
+        }
+    }
+}
+
+impl std::fmt::Debug for ReviewRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReviewRequest")
+            .field("segments_count", &self.translated.segments.len())
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PipelineOptions {
     pub tone: TranslationTone,
     pub voice_config: Option<SpeakerVoiceConfig>,
     pub export_subtitles: bool,
     pub engine: DubbingEngine,
+    pub duck_audio: bool,
+    pub review_transcript: bool,
+    pub review_channel: Option<async_channel::Sender<ReviewRequest>>,
 }
 
 pub struct PipelineOrchestrator {
@@ -269,7 +302,7 @@ impl PipelineOrchestrator {
 
         // 3. Translation Stage
         let t_translate_start = Instant::now();
-        let translated = if job.stage == PipelineStage::Transcribing
+        let mut translated = if job.stage == PipelineStage::Transcribing
             || job.stage == PipelineStage::Translating
         {
             update_stage(
@@ -302,6 +335,40 @@ impl PipelineOrchestrator {
         };
         let t_translate = t_translate_start.elapsed();
 
+        // Interactive Review Checkpoint (Human-in-the-Loop)
+        if options.review_transcript {
+            if let Some(ref ch) = options.review_channel {
+                let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+                let req = ReviewRequest::new(transcript.clone(), translated.clone(), resume_tx);
+                if ch.send(req).await.is_ok() {
+                    match resume_rx.await {
+                        Ok(Some(edited_doc)) => {
+                            tracing::info!(
+                                "User submitted reviewed translation with {} segments",
+                                edited_doc.segments.len()
+                            );
+                            translated = edited_doc;
+                            // Save updated translation to disk
+                            let translated_path = job_dir.join("translated.json");
+                            if let Ok(data) = serde_json::to_string_pretty(&translated) {
+                                let _ = std::fs::write(translated_path, data);
+                            }
+                        }
+                        Ok(None) => {
+                            tracing::info!("User cancelled job during translation review checkpoint");
+                            job.cancel();
+                            self.job_repo.save(&job).await?;
+                            on_progress(&job);
+                            return Err(DomainError::Cancelled);
+                        }
+                        Err(_) => {
+                            tracing::warn!("Review channel dropped, proceeding with existing translation");
+                        }
+                    }
+                }
+            }
+        }
+
         if let Err(e) = check_cancellation(&mut job) {
             self.job_repo.save(&job).await?;
             on_progress(&job);
@@ -326,7 +393,7 @@ impl PipelineOrchestrator {
             .map(|info| info.default_voice.as_str())
             .unwrap_or("Kore");
 
-        let default_voice_pool = ["Kore", "Puck", "Fenrir", "Aoede"];
+        let default_voice_pool = ["Kore", "Puck", "Aoede", "Charon", "Fenrir"];
         let mut ordered_voices = vec![base_default_voice.to_string()];
         for v in &default_voice_pool {
             if *v != base_default_voice {
@@ -340,7 +407,15 @@ impl PipelineOrchestrator {
             let voice_name = options
                 .voice_config
                 .as_ref()
-                .and_then(|c| c.get_voice_for(Some(spk.as_str())))
+                .and_then(|c| {
+                    if idx == 0 {
+                        c.speaker_1_voice.as_deref().or_else(|| c.get_voice_for(Some(spk.as_str())))
+                    } else if idx == 1 {
+                        c.speaker_2_voice.as_deref().or_else(|| c.get_voice_for(Some(spk.as_str())))
+                    } else {
+                        c.get_voice_for(Some(spk.as_str()))
+                    }
+                })
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| ordered_voices[idx % ordered_voices.len()].clone());
 
@@ -568,7 +643,32 @@ impl PipelineOrchestrator {
             artifact.transcript_txt_path = Some(txt_path);
         }
 
-        // Fast video remuxing if source input is video container
+        // Audio Ducking (Smooth BGM attenuation)
+        let mut audio_for_packaging = artifact.path.clone();
+        if options.duck_audio {
+            let ducked_output = job_dir.join(format!("ducked_mix.{}", artifact.format.extension()));
+            match self
+                .audio_engine
+                .mix_with_ducking(&job.source_audio.path, &artifact.path, &ducked_output)
+                .await
+            {
+                Ok(dp) => {
+                    tracing::info!("Audio ducking generated: {}", dp.display());
+                    audio_for_packaging = dp.clone();
+                    if !job.source_audio.format.is_video() {
+                        artifact.path = dp;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to duck audio, keeping dubbed track: {}", e);
+                    artifact
+                        .quality_warnings
+                        .push(format!("Audio ducking failed: {}", e));
+                }
+            }
+        }
+
+        // Fast video remuxing with soft subtitles if source input is video container
         if job.source_audio.format.is_video() {
             let ext = job.source_audio.format.extension();
             let remuxed_video_path = AppPaths::outputs_dir().join(format!(
@@ -579,11 +679,20 @@ impl PipelineOrchestrator {
             ));
             match self
                 .audio_engine
-                .remux_video(&job.source_audio.path, &artifact.path, &remuxed_video_path)
+                .remux_video(
+                    &job.source_audio.path,
+                    &audio_for_packaging,
+                    artifact.subtitle_srt_path.as_deref(),
+                    Some(job.target_language.to_iso639_2()),
+                    &remuxed_video_path,
+                )
                 .await
             {
                 Ok(vp) => {
-                    tracing::info!("Remuxed dubbed video generated at: {}", vp.display());
+                    tracing::info!(
+                        "Remuxed dubbed video generated with soft subtitles at: {}",
+                        vp.display()
+                    );
                     artifact.video_path = Some(vp);
                 }
                 Err(e) => {

@@ -111,6 +111,7 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let mut voice_2: Option<String> = None;
     let mut output_path_opt: Option<PathBuf> = None;
     let mut engine = DubbingEngine::Studio;
+    let mut duck_audio = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -138,6 +139,9 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
             "--output" | "-o" if i + 1 < args.len() => {
                 output_path_opt = Some(PathBuf::from(&args[i + 1]));
                 i += 1;
+            }
+            "--duck" | "--ducking" => {
+                duck_audio = true;
             }
             "--engine" if i + 1 < args.len() => {
                 let eng_str = args[i + 1].to_lowercase();
@@ -215,6 +219,9 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         voice_config,
         export_subtitles: true,
         engine,
+        duck_audio,
+        review_transcript: false,
+        review_channel: None,
     };
 
     println!(
@@ -384,6 +391,9 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
             voice_config: voice_config.clone(),
             export_subtitles: true,
             engine: DubbingEngine::default(),
+            duck_audio: false,
+            review_transcript: false,
+            review_channel: None,
         };
 
         match orchestrator

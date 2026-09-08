@@ -133,7 +133,7 @@ async fn test_ffmpeg_video_remuxing() {
     // 3. Remux video + audio
     let engine = FfmpegAudioEngine::new();
     let result = engine
-        .remux_video(&video_mp4, &dubbed_audio, &remuxed_mp4)
+        .remux_video(&video_mp4, &dubbed_audio, None, None, &remuxed_mp4)
         .await
         .expect("Failed to remux video");
 
@@ -288,4 +288,94 @@ async fn test_ffmpeg_video_audio_extraction() {
     assert!(extracted_mp3.exists());
     assert!(audio_doc.metadata.duration_ms >= 1800 && audio_doc.metadata.duration_ms <= 2200);
 }
+
+#[tokio::test]
+async fn test_ffmpeg_mix_with_ducking() {
+    let dir = tempdir().unwrap();
+    let bg_audio = dir.path().join("background.wav");
+    let voice_audio = dir.path().join("voice.wav");
+    let ducked_output = dir.path().join("ducked_mix.mp3");
+
+    // Generate 2s background audio
+    let status_bg = Command::new("ffmpeg")
+        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=2", "-c:a", "pcm_s16le"])
+        .arg(&bg_audio)
+        .status()
+        .expect("Failed to generate background audio");
+    assert!(status_bg.success());
+
+    // Generate 1s voiceover audio
+    let status_v = Command::new("ffmpeg")
+        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=880:duration=1", "-c:a", "pcm_s16le"])
+        .arg(&voice_audio)
+        .status()
+        .expect("Failed to generate voice audio");
+    assert!(status_v.success());
+
+    let engine = FfmpegAudioEngine::new();
+    let result = engine
+        .mix_with_ducking(&bg_audio, &voice_audio, &ducked_output)
+        .await
+        .expect("Audio ducking mix should succeed");
+
+    assert!(result.exists());
+    let doc = engine
+        .inspect_and_validate(&ducked_output, 10 * 1024 * 1024)
+        .await
+        .expect("Ducked output should be a valid MP3");
+    assert_eq!(doc.format, AudioFormat::Mp3);
+    assert!(doc.metadata.duration_ms >= 1800);
+}
+
+#[tokio::test]
+async fn test_ffmpeg_video_remux_with_soft_subtitles() {
+    let dir = tempdir().unwrap();
+    let video_mp4 = dir.path().join("input_video.mp4");
+    let audio_mp3 = dir.path().join("dubbed.mp3");
+    let srt_file = dir.path().join("subtitles.srt");
+    let output_mp4 = dir.path().join("output_with_subs.mp4");
+
+    // Generate 2s test video
+    let status_vid = Command::new("ffmpeg")
+        .args(["-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=30"])
+        .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=2"])
+        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        .arg(&video_mp4)
+        .status()
+        .expect("Failed to create test video");
+    assert!(status_vid.success());
+
+    // Generate 2s dubbed audio
+    let status_aud = Command::new("ffmpeg")
+        .args(["-y", "-f", "lavfi", "-i", "sine=frequency=500:duration=2", "-c:a", "libmp3lame"])
+        .arg(&audio_mp3)
+        .status()
+        .expect("Failed to create test audio");
+    assert!(status_aud.success());
+
+    // Generate sample SRT subtitle file
+    let srt_content = "1\n00:00:00,100 --> 00:00:01,800\nHalo ini uji coba dubbing AI\n\n";
+    std::fs::write(&srt_file, srt_content).expect("Failed to write SRT file");
+
+    let engine = FfmpegAudioEngine::new();
+    let result = engine
+        .remux_video(
+            &video_mp4,
+            &audio_mp3,
+            Some(&srt_file),
+            Some("ind"),
+            &output_mp4,
+        )
+        .await
+        .expect("Remuxing with soft subtitles should succeed");
+
+    assert!(result.exists());
+    let doc = engine
+        .inspect_and_validate(&output_mp4, 50 * 1024 * 1024)
+        .await
+        .expect("Remuxed video should be valid");
+    assert_eq!(doc.format, AudioFormat::Mp4);
+    assert!(doc.metadata.duration_ms >= 1800);
+}
+
 

@@ -303,3 +303,25 @@ fn test_dubbing_engine_variants_and_display() {
     assert!(format!("{}", live).contains("Live Fast Translate"));
 }
 
+#[test]
+fn test_language_id_to_iso639_2() {
+    assert_eq!(LanguageId::new("id").to_iso639_2(), "ind");
+    assert_eq!(LanguageId::new("en").to_iso639_2(), "eng");
+    assert_eq!(LanguageId::new("ja").to_iso639_2(), "jpn");
+    assert_eq!(LanguageId::new("es").to_iso639_2(), "spa");
+    assert_eq!(LanguageId::new("fr").to_iso639_2(), "fra");
+    assert_eq!(LanguageId::new("de").to_iso639_2(), "deu");
+    assert_eq!(LanguageId::new("unknown").to_iso639_2(), "und");
+}
+
+#[test]
+fn test_speaker_voice_config_resolution() {
+    use audiodub::domain::SpeakerVoiceConfig;
+
+    let config = SpeakerVoiceConfig::new(Some("Puck".to_string()), Some("Aoede".to_string()));
+    assert_eq!(config.get_voice_for(Some("Speaker 1")), Some("Puck"));
+    assert_eq!(config.get_voice_for(Some("Speaker 2")), Some("Aoede"));
+    assert_eq!(config.get_voice_for(None), Some("Puck"));
+}
+
+

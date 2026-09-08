@@ -44,7 +44,69 @@ impl SettingsDialog {
             }
         });
 
+        let test_row = libadwaita::ActionRow::new();
+        test_row.set_title("Test API Connection");
+        test_row.set_subtitle("Verify API key access and quota status");
+
+        let spinner = gtk4::Spinner::new();
+        spinner.set_visible(false);
+
+        let test_btn = gtk4::Button::with_label("Test Connection");
+        test_btn.set_valign(gtk4::Align::Center);
+        test_btn.add_css_class("flat");
+
+        let test_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        test_box.set_valign(gtk4::Align::Center);
+        test_box.append(&spinner);
+        test_box.append(&test_btn);
+        test_row.add_suffix(&test_box);
+
+        let key_row_ref = key_row.clone();
+        let test_row_clone = test_row.clone();
+        let spinner_clone = spinner.clone();
+        let btn_clone = test_btn.clone();
+
+        test_btn.connect_clicked(move |_| {
+            let key = key_row_ref.text().to_string();
+            if key.trim().is_empty() {
+                test_row_clone.set_subtitle("⚠ Please enter an API key first");
+                return;
+            }
+
+            spinner_clone.set_visible(true);
+            spinner_clone.start();
+            btn_clone.set_sensitive(false);
+            test_row_clone.set_subtitle("Testing connection to Google Gemini API...");
+
+            let row_for_async = test_row_clone.clone();
+            let spin_for_async = spinner_clone.clone();
+            let btn_for_async = btn_clone.clone();
+
+            glib::MainContext::default().spawn_local(async move {
+                let client = crate::infrastructure::gemini::GeminiClient::new(&key);
+                match client.test_connection().await {
+                    Ok(models) => {
+                        spin_for_async.stop();
+                        spin_for_async.set_visible(false);
+                        btn_for_async.set_sensitive(true);
+                        let count = models.len();
+                        row_for_async.set_subtitle(&format!(
+                            "✓ Connected successfully! ({} Gemini models available)",
+                            count
+                        ));
+                    }
+                    Err(err) => {
+                        spin_for_async.stop();
+                        spin_for_async.set_visible(false);
+                        btn_for_async.set_sensitive(true);
+                        row_for_async.set_subtitle(&format!("✗ Connection failed: {}", err));
+                    }
+                }
+            });
+        });
+
         api_group.add(&key_row);
+        api_group.add(&test_row);
         page.add(&api_group);
 
         // 2. Audio Preferences Group

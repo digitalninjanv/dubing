@@ -19,6 +19,8 @@ pub struct DropzoneView {
     target_combo: libadwaita::ComboRow,
     engine_combo: libadwaita::ComboRow,
     tone_combo: libadwaita::ComboRow,
+    ducking_switch: libadwaita::SwitchRow,
+    review_switch: libadwaita::SwitchRow,
     speaker1_combo: libadwaita::ComboRow,
     speaker2_combo: libadwaita::ComboRow,
     source_ids: Vec<LanguageId>,
@@ -148,13 +150,27 @@ impl DropzoneView {
         tone_combo.set_selected(0);
         pref_group.add(&tone_combo);
 
+        // Audio Ducking & Review Checkpoint switches
+        let ducking_switch = libadwaita::SwitchRow::new();
+        ducking_switch.set_title("Background Audio Ducking");
+        ducking_switch.set_subtitle("Smoothly lower background music volume under dubbed speech");
+        ducking_switch.set_active(false);
+        pref_group.add(&ducking_switch);
+
+        let review_switch = libadwaita::SwitchRow::new();
+        review_switch.set_title("Review & Edit Translation");
+        review_switch.set_subtitle("Inspect and modify translated text before speech synthesis");
+        review_switch.set_active(false);
+        pref_group.add(&review_switch);
+
         // Voice Profile Expander
         let voice_options = [
             "Auto (Recommended)",
             "Kore (Firm & professional)",
             "Puck (Upbeat & clear)",
-            "Fenrir (Excited & resonant)",
             "Aoede (Breezy & soft)",
+            "Charon (Authoritative & deep)",
+            "Fenrir (Excited & resonant)",
         ];
         let voice_expander = libadwaita::ExpanderRow::new();
         voice_expander.set_title("Speaker Voices (Optional)");
@@ -214,6 +230,8 @@ impl DropzoneView {
             target_combo,
             engine_combo,
             tone_combo,
+            ducking_switch,
+            review_switch,
             speaker1_combo,
             speaker2_combo,
             source_ids,
@@ -276,13 +294,22 @@ impl DropzoneView {
         }
     }
 
+    pub fn is_ducking_enabled(&self) -> bool {
+        self.ducking_switch.is_active()
+    }
+
+    pub fn is_review_enabled(&self) -> bool {
+        self.review_switch.is_active()
+    }
+
     pub fn selected_voice_config(&self) -> Option<SpeakerVoiceConfig> {
         let extract_voice = |idx: u32| -> Option<String> {
             match idx {
                 1 => Some("Kore".to_string()),
                 2 => Some("Puck".to_string()),
-                3 => Some("Fenrir".to_string()),
-                4 => Some("Aoede".to_string()),
+                3 => Some("Aoede".to_string()),
+                4 => Some("Charon".to_string()),
+                5 => Some("Fenrir".to_string()),
                 _ => None,
             }
         };

@@ -433,4 +433,50 @@ async fn test_gemini_synthesizer_fallback_to_25_flash_tts() {
     assert!(out_file.exists());
 }
 
+#[tokio::test]
+async fn test_gemini_client_test_connection() {
+    let server = MockServer::start().await;
+
+    // 1. Success case: returns 200 with models list
+    let models_json = serde_json::json!({
+        "models": [
+            { "name": "models/gemini-3.5-transcribe" },
+            { "name": "models/gemini-3.1-flash-lite" },
+            { "name": "models/gemini-3.1-flash-tts-preview" }
+        ]
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&models_json))
+        .mount(&server)
+        .await;
+
+    let client = GeminiClient::new("valid-api-key").with_base_url(server.uri());
+    let models = client
+        .test_connection()
+        .await
+        .expect("test_connection should succeed");
+
+    assert_eq!(models.len(), 3);
+    assert!(models.contains(&"gemini-3.5-transcribe".to_string()));
+
+    // 2. Failure case: unauthorized 401 returns AuthenticationFailed
+    let server_unauth = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server_unauth)
+        .await;
+
+    let client_bad = GeminiClient::new("bad-key").with_base_url(server_unauth.uri());
+    let err = client_bad
+        .test_connection()
+        .await
+        .expect_err("test_connection should fail with 401");
+
+    assert_eq!(err, audiodub::domain::DomainError::AuthenticationFailed);
+}
+
+
 

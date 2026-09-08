@@ -69,6 +69,60 @@ impl GeminiClient {
         &self.api_key
     }
 
+    /// Non-destructive 0-token validation of the API key by querying /v1beta/models
+    pub async fn test_connection(&self) -> Result<Vec<String>, DomainError> {
+        if self.api_key.trim().is_empty() {
+            return Err(DomainError::AuthenticationFailed);
+        }
+
+        let url = format!("{}/v1beta/models?key={}", self.base_url, self.api_key);
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| DomainError::TransientError(format!("Network connection failed: {}", e)))?;
+
+        let status = resp.status();
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(DomainError::AuthenticationFailed);
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(DomainError::TransientError(
+                "Gemini API rate limit or quota exceeded (HTTP 429)".to_string(),
+            ));
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(DomainError::Internal(format!(
+                "Gemini API returned HTTP {}: {}",
+                status, body
+            )));
+        }
+
+        #[derive(serde::Deserialize)]
+        struct ModelItem {
+            name: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct ModelsListResponse {
+            models: Option<Vec<ModelItem>>,
+        }
+
+        let parsed: ModelsListResponse = resp.json().await.map_err(|e| {
+            DomainError::Internal(format!("Failed to parse models JSON: {}", e))
+        })?;
+
+        let model_names = parsed
+            .models
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| m.name.replace("models/", ""))
+            .collect();
+
+        Ok(model_names)
+    }
+
     pub async fn post_with_retry<F, Fut>(
         &self,
         operation_name: &str,
