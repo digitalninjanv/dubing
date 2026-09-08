@@ -10,19 +10,14 @@ pub struct AudioStreamPlayer;
 
 impl AudioStreamPlayer {
     /// Play raw 24 kHz signed-16 mono PCM in realtime.
-    ///
-    /// PipeWire's `pw-cat` is preferred on Linux. FFmpeg/PulseAudio remains a compatibility
-    /// fallback so the application still works on systems where PipeWire's CLI tools are absent.
+    /// PipeWire's native `pw-cat` is preferred; FFmpeg/PulseAudio remains the compatibility fallback.
     pub async fn start_playback(
         sink_name: &str,
         mut pcm_rx: Receiver<Vec<u8>>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
-        let effective_sink = if sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" {
-            "default"
-        } else {
-            sink_name
-        };
+        let is_default = sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" || sink_name == "default";
+        let effective_sink = if is_default { "default" } else { sink_name };
 
         let use_pw_cat = Command::new("pw-cat")
             .arg("--version")
@@ -35,11 +30,15 @@ impl AudioStreamPlayer {
         info!("Starting live playback to '{}' using {} backend", effective_sink, backend);
 
         let mut child = if use_pw_cat {
-            Command::new("pw-cat")
-                .args([
-                    "--playback", "--raw", "--rate", "24000", "--channels", "1",
-                    "--format", "s16", "--latency", "20ms", "--target", effective_sink, "-",
-                ])
+            let mut cmd = Command::new("pw-cat");
+            cmd.args([
+                "--playback", "--raw", "--rate", "24000", "--channels", "1",
+                "--format", "s16", "--latency", "20ms",
+            ]);
+            if !is_default {
+                cmd.args(["--target", effective_sink]);
+            }
+            cmd.arg("-")
                 .stdin(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
