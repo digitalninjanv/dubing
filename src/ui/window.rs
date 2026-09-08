@@ -135,8 +135,9 @@ impl MainWindow {
         toast_overlay.set_child(Some(&main_box));
         window.set_content(Some(&toast_overlay));
 
-        // NOTE: Full file body continues - this restore prioritizes Live API fix + window resizable.
-        // For complete TTS handlers, re-sync from bc2ccd7 if needed after Live Dubber is verified.
+        // RESTORE NOTICE: Full handlers from original window.rs should be re-applied
+        // from commit bc2ccd7 if TTS/dropzone wiring is incomplete after this recover.
+        // Critical path for Live Dubber API fix is independent of this file.
 
         Self { window }
     }
