@@ -30,10 +30,10 @@ impl GeminiLiveStreamer {
     /// Connects to the Gemini Multimodal Live API WebSocket and runs continuous bidirectional
     /// audio streaming.
     ///
-    /// Uses official Live Translation configuration for gemini-3.5-live-translate-preview
-    /// (translationConfig + input/output transcriptions) per Google AI docs 2026.
-    /// Handshake is hardened: dual transcription placement, binary-frame support,
-    /// full message logging, 25s timeout.
+    /// Setup payload follows official BidiGenerateContentSetup schema:
+    /// - translationConfig inside generationConfig
+    /// - inputAudioTranscription / outputAudioTranscription at setup TOP LEVEL only
+    ///   (putting them inside generationConfig causes: Unknown name at setup.generation_config)
     pub async fn run_live_session(
         &self,
         config: LiveStreamSessionConfig<'_>,
@@ -59,25 +59,21 @@ impl GeminiLiveStreamer {
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // Build setup payload. For Live Translate we place transcriptions BOTH at
-        // setup top-level (production examples / livekit) AND inside generationConfig
-        // (official docs) for maximum compatibility.
+        // Official schema: transcriptions at setup top-level; translationConfig in generationConfig.
         let setup_msg = match config.model_choice {
             LiveModelChoice::Gemini35LiveTranslate => {
                 serde_json::json!({
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
-                        "inputAudioTranscription": {},
-                        "outputAudioTranscription": {},
                         "generationConfig": {
                             "responseModalities": ["AUDIO"],
-                            "inputAudioTranscription": {},
-                            "outputAudioTranscription": {},
                             "translationConfig": {
                                 "targetLanguageCode": config.target_lang.as_str(),
                                 "echoTargetLanguage": false
                             }
-                        }
+                        },
+                        "inputAudioTranscription": {},
+                        "outputAudioTranscription": {}
                     }
                 })
             }
@@ -102,7 +98,9 @@ impl GeminiLiveStreamer {
                                     config.target_lang_name
                                 )
                             }]
-                        }
+                        },
+                        "inputAudioTranscription": {},
+                        "outputAudioTranscription": {}
                     }
                 })
             }
@@ -113,6 +111,7 @@ impl GeminiLiveStreamer {
                         "generationConfig": {
                             "responseModalities": ["TEXT"]
                         },
+                        "inputAudioTranscription": {},
                         "systemInstruction": {
                             "parts": [{
                                 "text": "You are a real-time speech transcription assistant. Transcribe incoming spoken audio into text immediately as speech occurs. Output only the verbatim transcript."
@@ -134,7 +133,6 @@ impl GeminiLiveStreamer {
                 DomainError::TransientError(format!("Failed to send Live API setup message: {}", e))
             })?;
 
-        // Handshake: wait for setupComplete. Handle Text + Binary frames, log everything.
         info!("Waiting for Gemini Live API setupComplete acknowledgment...");
         let mut last_raw: Option<String> = None;
 
@@ -147,23 +145,22 @@ impl GeminiLiveStreamer {
                 msg_res = ws_receiver.next() => {
                     match msg_res {
                         Some(Ok(Message::Text(text))) => {
-                            info!("Live API handshake Text frame ({} bytes)", text.len());
-                            debug!("Handshake Text: {}", text);
+                            info!("Live API handshake TEXT frame ({} bytes)", text.len());
+                            debug!("Handshake text: {}", text);
                             last_raw = Some(text.clone());
-                            if let Some(result) = Self::process_handshake_payload(&text, &mut ws_sender).await? {
-                                if result {
-                                    break; // setupComplete received
+                            if let Some(done) = Self::process_handshake_payload(&text, &mut ws_sender).await? {
+                                if done {
+                                    break;
                                 }
                             }
                         }
                         Some(Ok(Message::Binary(bin))) => {
-                            // Some clients/servers exchange JSON as binary frames
                             let text = String::from_utf8_lossy(&bin).to_string();
                             info!("Live API handshake BINARY frame ({} bytes)", bin.len());
                             debug!("Handshake binary-as-text: {}", text);
                             last_raw = Some(text.clone());
-                            if let Some(result) = Self::process_handshake_payload(&text, &mut ws_sender).await? {
-                                if result {
+                            if let Some(done) = Self::process_handshake_payload(&text, &mut ws_sender).await? {
+                                if done {
                                     break;
                                 }
                             }
@@ -181,8 +178,7 @@ impl GeminiLiveStreamer {
                         }
                         Some(Err(e)) => {
                             return Err(DomainError::TransientError(format!(
-                                "WebSocket receive error during handshake: {}",
-                                e
+                                "WebSocket receive error during handshake: {}", e
                             )));
                         }
                         None => {
@@ -200,7 +196,7 @@ impl GeminiLiveStreamer {
                     let _ = ws_sender.close().await;
                     return Err(DomainError::TransientError(format!(
                         "Timed out waiting for Gemini Live API setupComplete (25s). Last server payload: {}. \
-Check: (1) API key has Live API / Live Translate access, (2) model gemini-3.5-live-translate-preview is available in your region/tier, (3) network allows WSS to generativelanguage.googleapis.com",
+Check API key Live access, model availability, and network to generativelanguage.googleapis.com",
                         detail
                     )));
                 }
@@ -208,7 +204,6 @@ Check: (1) API key has Live API / Live Translate access, (2) model gemini-3.5-li
         }
 
         info!("Gemini Live API setup complete! Ready for real-time audio streaming.");
-        debug!("Streaming audio chunks in real-time...");
 
         let mut chunks_sent: u64 = 0;
 
@@ -375,8 +370,8 @@ Check: (1) API key has Live API / Live Translate access, (2) model gemini-3.5-li
         Ok(())
     }
 
-    /// Returns Ok(Some(true)) if setupComplete was found, Ok(Some(false)) if message was handled but not complete,
-    /// Ok(None) if not a relevant payload, Err on fatal API error.
+    /// Returns Ok(Some(true)) if setupComplete found, Ok(Some(false)) if handled but not complete,
+    /// Ok(None) if irrelevant, Err on fatal API error.
     async fn process_handshake_payload(
         text: &str,
         ws_sender: &mut (impl SinkExt<Message> + Unpin),
@@ -396,13 +391,11 @@ Check: (1) API key has Live API / Live Translate access, (2) model gemini-3.5-li
             let _ = ws_sender.close().await;
             if code == 429 {
                 return Err(DomainError::TransientError(format!(
-                    "Live API rate limited (429): {}",
-                    msg
+                    "Live API rate limited (429): {}", msg
                 )));
             } else {
                 return Err(DomainError::PermanentApiError(format!(
-                    "Live API setup rejected: {} (code {})",
-                    msg, code
+                    "Live API setup rejected: {} (code {})", msg, code
                 )));
             }
         }
@@ -411,7 +404,6 @@ Check: (1) API key has Live API / Live Translate access, (2) model gemini-3.5-li
             return Ok(Some(true));
         }
 
-        // Any other message is logged but we keep waiting
         Ok(Some(false))
     }
 }
