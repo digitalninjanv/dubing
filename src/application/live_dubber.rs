@@ -32,7 +32,9 @@ impl LiveDubberOrchestrator {
         Self {
             audio_router,
             live_streamer,
-            virtual_sink_name: "AudioDub_Virtual_Sink".to_string(),
+            // Unique per-process to avoid "already exists" when a previous
+            // session leaked a sink or two sessions race (P1-6).
+            virtual_sink_name: format!("AudioDub_Virtual_Sink_{}", std::process::id()),
         }
     }
 
@@ -99,7 +101,8 @@ impl LiveDubberOrchestrator {
                                 let watcher_moved = moved_apps.clone();
                                 let watcher_token = cancel_token.clone();
 
-                                tokio::spawn(async move {
+                                // P0-2: keep watcher handle so we can abort it on exit and avoid leak after to_restore snapshot.
+                                let _watcher_handle = tokio::spawn(async move {
                                     while !watcher_token.is_cancelled() {
                                         if let Ok(apps) = watcher_router.list_sink_inputs().await {
                                             for app in apps {
