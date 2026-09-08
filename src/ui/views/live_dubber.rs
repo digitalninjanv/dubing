@@ -33,6 +33,8 @@ pub struct LiveDubberView {
     spinner: gtk4::Spinner,
     original_buffer: gtk4::TextBuffer,
     translated_buffer: gtk4::TextBuffer,
+    orig_text_view: gtk4::TextView,
+    trans_text_view: gtk4::TextView,
     detected_apps: Rc<RefCell<Vec<AudioAppInfo>>>,
     is_running: Rc<RefCell<bool>>,
     cancel_token: Rc<RefCell<Option<CancellationToken>>>,
@@ -86,6 +88,8 @@ impl LiveDubberView {
         let status_desc = gtk4::Label::new(Some("Ready to connect to Gemini Multimodal Live API"));
         status_desc.add_css_class("body");
         status_desc.set_halign(gtk4::Align::Start);
+        status_desc.set_wrap(true);
+        status_desc.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
 
         header_box.append(&title_box);
         header_box.append(&subtitle_label);
@@ -283,6 +287,8 @@ impl LiveDubberView {
             spinner,
             original_buffer,
             translated_buffer,
+            orig_text_view,
+            trans_text_view,
             detected_apps: Rc::new(RefCell::new(Vec::new())),
             is_running: Rc::new(RefCell::new(false)),
             cancel_token: Rc::new(RefCell::new(None)),
@@ -523,17 +529,45 @@ impl LiveDubberView {
         let view_trans = self.clone();
         glib::spawn_future_local(async move {
             while let Ok(update) = trans_rx.recv().await {
+                let mut scrolled_orig = false;
+                let mut scrolled_trans = false;
+
                 if let Some(orig) = update.original_chunk {
                     let mut end = view_trans.original_buffer.end_iter();
                     view_trans
                         .original_buffer
                         .insert(&mut end, &format!("{} ", orig));
+                    scrolled_orig = true;
                 }
+
                 if let Some(dub) = update.translated_chunk {
                     let mut end = view_trans.translated_buffer.end_iter();
                     view_trans
                         .translated_buffer
                         .insert(&mut end, &format!("{} ", dub));
+                    scrolled_trans = true;
+                }
+
+                if update.is_turn_complete {
+                    let mut end_orig = view_trans.original_buffer.end_iter();
+                    view_trans.original_buffer.insert(&mut end_orig, "\n\n");
+                    scrolled_orig = true;
+
+                    let mut end_trans = view_trans.translated_buffer.end_iter();
+                    view_trans.translated_buffer.insert(&mut end_trans, "\n\n");
+                    scrolled_trans = true;
+                }
+
+                if scrolled_orig {
+                    let mark = view_trans.original_buffer.create_mark(None, &view_trans.original_buffer.end_iter(), false);
+                    view_trans.orig_text_view.scroll_to_mark(&mark, 0.0, false, 0.0, 1.0);
+                    view_trans.original_buffer.delete_mark(&mark);
+                }
+
+                if scrolled_trans {
+                    let mark = view_trans.translated_buffer.create_mark(None, &view_trans.translated_buffer.end_iter(), false);
+                    view_trans.trans_text_view.scroll_to_mark(&mark, 0.0, false, 0.0, 1.0);
+                    view_trans.translated_buffer.delete_mark(&mark);
                 }
             }
         });
