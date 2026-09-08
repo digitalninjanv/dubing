@@ -154,7 +154,16 @@ impl GeminiFilesApi {
             self.client.api_key()
         );
 
-        let _ = reqwest::Client::new().delete(&url).send().await;
+        // Reuse the pooled client (connection reuse) and send the key via
+        // header as well so server-side URL logs never see the secret alone.
+        let api_key = self.client.api_key().to_string();
+        let _ = self
+            .client
+            .http()
+            .delete(&url)
+            .header("x-goog-api-key", api_key)
+            .send()
+            .await;
         Ok(())
     }
 }

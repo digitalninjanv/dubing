@@ -1,10 +1,10 @@
 Name:           audiodub
-Version:        0.1.0
+Version:        0.4.5
 Release:        1%{?dist}
 Summary:        AI-powered spoken audio translation and dubbing for Linux
 
 License:        MIT
-URL:            https://github.com/digitalninjanv/audiodub
+URL:            https://github.com/digitalninjanv/dubing
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  rust >= 1.75

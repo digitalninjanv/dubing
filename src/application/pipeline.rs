@@ -62,6 +62,17 @@ fn path_to_str(path: &std::path::Path) -> Result<String, DomainError> {
         .ok_or_else(|| DomainError::Internal("File path contains non-UTF8 characters".to_string()))
 }
 
+/// Atomically persists a small JSON manifest (write .tmp + rename) so a
+/// crash can never leave a half-written transcript/translation behind.
+fn write_manifest_atomic(path: &std::path::Path, data: &str) -> Result<(), DomainError> {
+    let tmp_path = path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, data)
+        .map_err(|e| DomainError::Internal(format!("Failed to write manifest tmp file: {}", e)))?;
+    std::fs::rename(&tmp_path, path)
+        .map_err(|e| DomainError::Internal(format!("Failed to publish manifest file: {}", e)))?;
+    Ok(())
+}
+
 pub struct PipelineOrchestrator {
     transcriber: Arc<dyn SpeechTranscriber>,
     translator: Arc<dyn TextTranslator>,
@@ -168,7 +179,10 @@ impl PipelineOrchestrator {
         let debug_mode = self.debug_mode;
         let job_dir_cancel = job_dir.clone();
 
-        // Helper closure to update progress, persist to disk, and notify UI
+        // Helper closure to update progress, persist to disk, and notify UI.
+        // Resume-tolerant: re-announcing the current stage is a no-op, and a
+        // target stage that is already behind us (resume path) only refreshes
+        // the message instead of failing the job with an invalid transition.
         let update_stage =
             |job: &mut Job, stage: PipelineStage, msg: &str| -> Result<(), DomainError> {
                 if cancel_token.is_cancelled() {
@@ -177,6 +191,10 @@ impl PipelineOrchestrator {
                         CleanupManager::cleanup_temp_segments(&job_dir_cancel);
                     }
                     return Err(DomainError::Cancelled);
+                }
+                if job.stage != stage && !job.stage.can_transition_to(&stage) {
+                    job.progress.message = msg.to_string();
+                    return Ok(());
                 }
                 job.transition_to(stage).map_err(DomainError::Internal)?;
                 job.progress.message = msg.to_string();
@@ -286,11 +304,11 @@ impl PipelineOrchestrator {
                 job.source_language = t.language.clone();
             }
 
-            // Save transcript manifest
+            // Save transcript manifest (atomic so resume never reads a torn file)
             let transcript_path = job_dir.join("transcript.json");
             let data = serde_json::to_string_pretty(&t)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
-            let _ = std::fs::write(transcript_path, data);
+            write_manifest_atomic(&transcript_path, &data)?;
 
             t
         } else {
@@ -330,7 +348,7 @@ impl PipelineOrchestrator {
             let translated_path = job_dir.join("translated.json");
             let data = serde_json::to_string_pretty(&tr)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
-            let _ = std::fs::write(translated_path, data);
+            write_manifest_atomic(&translated_path, &data)?;
 
             tr
         } else {
@@ -357,10 +375,12 @@ impl PipelineOrchestrator {
                                 edited_doc.segments.len()
                             );
                             translated = edited_doc;
-                            // Save updated translation to disk
+                            // Save updated translation to disk (atomic)
                             let translated_path = job_dir.join("translated.json");
                             if let Ok(data) = serde_json::to_string_pretty(&translated) {
-                                let _ = std::fs::write(translated_path, data);
+                                if let Err(e) = write_manifest_atomic(&translated_path, &data) {
+                                    tracing::warn!("Failed to persist reviewed translation: {}", e);
+                                }
                             }
                         }
                         Ok(None) => {
@@ -800,6 +820,10 @@ impl PipelineOrchestrator {
                         CleanupManager::cleanup_temp_segments(&job_dir_cancel);
                     }
                     return Err(DomainError::Cancelled);
+                }
+                if job.stage != stage && !job.stage.can_transition_to(&stage) {
+                    job.progress.message = msg.to_string();
+                    return Ok(());
                 }
                 job.transition_to(stage).map_err(DomainError::Internal)?;
                 job.progress.message = msg.to_string();

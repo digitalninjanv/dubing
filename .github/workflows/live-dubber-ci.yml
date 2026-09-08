@@ -3,7 +3,7 @@ name: Linux Live Dubber CI
 on:
   push:
     branches:
-      - fix/live-dubber-linux-native
+      - main
   pull_request:
     branches:
       - main

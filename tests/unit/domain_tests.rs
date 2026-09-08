@@ -80,6 +80,36 @@ fn test_job_state_machine() {
 }
 
 #[test]
+fn test_job_state_machine_idempotent_reentry() {
+    let dummy_audio = AudioDocument {
+        id: "doc_1".to_string(),
+        path: PathBuf::from("/tmp/test.mp3"),
+        format: AudioFormat::Mp3,
+        mime_type: "audio/mp3".to_string(),
+        size_bytes: 1024,
+        metadata: MediaMetadata {
+            duration_ms: 10000,
+            sample_rate: 44100,
+            channels: 2,
+            codec: "mp3".to_string(),
+            bitrate: Some(192000),
+        },
+    };
+
+    // Regression: clicking Translate on a video input re-announced the
+    // Validating stage (audio extraction sub-step) and killed the job with
+    // "Invalid state transition from Validating to Validating".
+    let mut job = Job::new(dummy_audio, LanguageId::new("id"), LanguageId::new("en"));
+    assert!(job.transition_to(PipelineStage::Validating).is_ok());
+    assert!(job.transition_to(PipelineStage::Validating).is_ok());
+    assert_eq!(job.stage, PipelineStage::Validating);
+    // Forward progress still works after idempotent re-entry.
+    assert!(job.transition_to(PipelineStage::Uploading).is_ok());
+    // Backward jumps are still rejected by the strict state machine.
+    assert!(job.transition_to(PipelineStage::Validating).is_err());
+}
+
+#[test]
 fn test_job_retry_and_cancellation() {
     let dummy_audio = AudioDocument {
         id: "doc_1".to_string(),

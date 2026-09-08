@@ -89,10 +89,20 @@ impl JobRepository for FileJobRepository {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let job_file = entry.path().join("job.json");
                 if job_file.exists() {
-                    if let Ok(content) = fs::read_to_string(&job_file) {
-                        if let Ok(job) = serde_json::from_str::<Job>(&content) {
-                            jobs.push(job);
-                        }
+                    match fs::read_to_string(&job_file) {
+                        Ok(content) => match serde_json::from_str::<Job>(&content) {
+                            Ok(job) => jobs.push(job),
+                            Err(e) => tracing::warn!(
+                                "Skipping corrupt job manifest {}: {}",
+                                job_file.display(),
+                                e
+                            ),
+                        },
+                        Err(e) => tracing::warn!(
+                            "Skipping unreadable job manifest {}: {}",
+                            job_file.display(),
+                            e
+                        ),
                     }
                 }
             }

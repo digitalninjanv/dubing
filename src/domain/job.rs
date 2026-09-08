@@ -223,6 +223,14 @@ impl Job {
     }
 
     pub fn transition_to(&mut self, next: PipelineStage) -> Result<(), String> {
+        // Idempotent re-entry: re-announcing the current stage (e.g. resume
+        // paths or sub-steps like video audio-extraction that reuses the
+        // Validating stage) must not fail the whole job.
+        if self.stage == next {
+            self.progress.current_stage = next;
+            self.updated_at = Utc::now();
+            return Ok(());
+        }
         if !self.stage.can_transition_to(&next) {
             return Err(format!(
                 "Invalid state transition from {:?} to {:?}",
