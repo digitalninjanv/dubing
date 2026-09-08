@@ -121,19 +121,20 @@ impl LiveSpeechTranslator for GeminiLiveTranslator {
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // 1. Send Setup Message (Official Google Live Translate configuration)
+        // Correct per BidiGenerateContentSetup proto: transcriptions are
+        // top-level setup fields, not generationConfig.
         let setup_msg = serde_json::json!({
             "setup": {
                 "model": format!("models/{}", self.model_name),
                 "generationConfig": {
                     "responseModalities": ["AUDIO"],
-                    "inputAudioTranscription": {},
-                    "outputAudioTranscription": {},
                     "translationConfig": {
                         "targetLanguageCode": target_lang.as_str(),
                         "echoTargetLanguage": true
                     }
-                }
+                },
+                "inputAudioTranscription": {},
+                "outputAudioTranscription": {}
             }
         });
 

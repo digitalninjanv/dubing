@@ -58,7 +58,10 @@ impl GeminiLiveStreamer {
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // Unified generationConfig-only schema per official docs.
+        // Correct per BidiGenerateContentSetup proto (ai.google.dev/api/live):
+        // input/outputAudioTranscription are TOP-LEVEL setup fields, not
+        // generationConfig fields. translationConfig/speechConfig remain inside
+        // generationConfig. This matches server error "Unknown name at setup.generation_config".
         let setup_msg = match config.model_choice {
             LiveModelChoice::Gemini35LiveTranslate => {
                 serde_json::json!({
@@ -66,13 +69,13 @@ impl GeminiLiveStreamer {
                         "model": format!("models/{}", config.model_choice.model_id()),
                         "generationConfig": {
                             "responseModalities": ["AUDIO"],
-                            "inputAudioTranscription": {},
-                            "outputAudioTranscription": {},
                             "translationConfig": {
                                 "targetLanguageCode": config.target_lang.as_str(),
                                 "echoTargetLanguage": false
                             }
-                        }
+                        },
+                        "inputAudioTranscription": {},
+                        "outputAudioTranscription": {}
                     }
                 })
             }
@@ -82,8 +85,6 @@ impl GeminiLiveStreamer {
                         "model": format!("models/{}", config.model_choice.model_id()),
                         "generationConfig": {
                             "responseModalities": ["AUDIO"],
-                            "inputAudioTranscription": {},
-                            "outputAudioTranscription": {},
                             "speechConfig": {
                                 "voiceConfig": {
                                     "prebuiltVoiceConfig": {
@@ -99,7 +100,9 @@ impl GeminiLiveStreamer {
                                     config.target_lang_name
                                 )
                             }]
-                        }
+                        },
+                        "inputAudioTranscription": {},
+                        "outputAudioTranscription": {}
                     }
                 })
             }
@@ -108,9 +111,9 @@ impl GeminiLiveStreamer {
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
                         "generationConfig": {
-                            "responseModalities": ["TEXT"],
-                            "inputAudioTranscription": {}
+                            "responseModalities": ["TEXT"]
                         },
+                        "inputAudioTranscription": {},
                         "systemInstruction": {
                             "parts": [{
                                 "text": "You are a real-time speech transcription assistant. Transcribe incoming spoken audio into text immediately as speech occurs. Output only the verbatim transcript."
