@@ -1,6 +1,6 @@
 use crate::domain::DomainError;
 use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
@@ -9,69 +9,69 @@ use tracing::{debug, info, warn};
 pub struct AudioStreamPlayer;
 
 impl AudioStreamPlayer {
-    /// Spawns an asynchronous playback worker that receives raw 24kHz 16-bit mono PCM chunks
-    /// and streams them directly to the physical audio output sink via FFmpeg/PulseAudio.
+    /// Play raw 24 kHz signed-16 mono PCM in realtime.
+    /// PipeWire's native `pw-cat` is preferred; FFmpeg/PulseAudio remains the compatibility fallback.
     pub async fn start_playback(
         sink_name: &str,
         mut pcm_rx: Receiver<Vec<u8>>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
-        let effective_sink = if sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" {
-            "default"
+        let is_default = sink_name.is_empty() || sink_name == "@DEFAULT_SINK@" || sink_name == "default";
+        let effective_sink = if is_default { "default" } else { sink_name };
+
+        let use_pw_cat = Command::new("pw-cat")
+            .arg("--version")
+            .output()
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        let backend = if use_pw_cat { "PipeWire" } else { "PulseAudio/pipewire-pulse fallback" };
+        info!("Starting live playback to '{}' using {} backend", effective_sink, backend);
+
+        let mut child = if use_pw_cat {
+            let mut cmd = Command::new("pw-cat");
+            cmd.args([
+                "--playback", "--raw", "--rate", "24000", "--channels", "1",
+                "--format", "s16", "--latency", "20ms",
+            ]);
+            if !is_default {
+                cmd.args(["--target", effective_sink]);
+            }
+            cmd.arg("-")
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| DomainError::Internal(format!("Failed to spawn PipeWire playback (pw-cat): {}", e)))?
         } else {
-            sink_name
+            Command::new("ffmpeg")
+                .args([
+                    "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
+                    "-flags", "low_delay", "-f", "s16le", "-ar", "24000", "-ac", "1",
+                    "-i", "-", "-f", "pulse", effective_sink,
+                ])
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| DomainError::Internal(format!("Failed to spawn FFmpeg playback fallback: {}", e)))?
         };
 
-        info!("Starting live audio playback to sink: {}", effective_sink);
-
-        let mut child = Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-fflags",
-                "nobuffer",
-                "-flags",
-                "low_delay",
-                "-probesize",
-                "32",
-                "-analyzeduration",
-                "0",
-                "-f",
-                "s16le",
-                "-ar",
-                "24000",
-                "-ac",
-                "1",
-                "-i",
-                "-",
-                "-f",
-                "pulse",
-                effective_sink,
-            ])
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| DomainError::Internal(format!("Failed to spawn ffmpeg audio player: {}", e)))?;
-
-        // Fast health check: detect if ffmpeg died immediately on opening sink
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
         if let Ok(Some(status)) = child.try_wait() {
             let mut err_msg = String::new();
             if let Some(mut err_pipe) = child.stderr.take() {
-                use tokio::io::AsyncReadExt;
                 let mut err_buf = Vec::new();
                 let _ = err_pipe.read_to_end(&mut err_buf).await;
                 err_msg = String::from_utf8_lossy(&err_buf).trim().to_string();
             }
             return Err(DomainError::Internal(format!(
-                "Live audio playback sink '{}' unavailable (status {}): {}",
-                effective_sink, status, err_msg
+                "Live playback sink '{}' unavailable via {} (status {}): {}",
+                effective_sink, backend, status, err_msg
             )));
         }
 
         let mut stdin = child.stdin.take().ok_or_else(|| {
-            DomainError::Internal("Failed to capture stdin of ffmpeg player".to_string())
+            DomainError::Internal("Failed to capture live playback stdin".to_string())
         })?;
         let mut stderr = child.stderr.take();
 
@@ -79,7 +79,7 @@ impl AudioStreamPlayer {
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
-                        debug!("Playback loop received cancellation signal");
+                        debug!("Playback loop cancelled");
                         break;
                     }
                     maybe_chunk = pcm_rx.recv() => {
@@ -88,32 +88,23 @@ impl AudioStreamPlayer {
                                 if let Err(e) = stdin.write_all(&chunk).await {
                                     let mut err_msg = String::new();
                                     if let Some(mut err_pipe) = stderr.take() {
-                                        use tokio::io::AsyncReadExt;
                                         let mut err_buf = Vec::new();
                                         let _ = err_pipe.read_to_end(&mut err_buf).await;
                                         err_msg = String::from_utf8_lossy(&err_buf).trim().to_string();
                                     }
-                                    warn!(
-                                        "Error writing PCM chunk to audio playback: {} (ffmpeg details: {})",
-                                        e, err_msg
-                                    );
+                                    warn!("Live playback stream ended: {} ({})", e, err_msg);
                                     break;
                                 }
-                                let _ = stdin.flush().await;
                             }
-                            None => {
-                                debug!("Playback receiver channel closed");
-                                break;
-                            }
+                            None => break,
                         }
                     }
                 }
             }
-
             let _ = child.kill().await;
+            let _ = child.wait().await;
             debug!("Live playback process terminated");
         });
-
         Ok(())
     }
 }

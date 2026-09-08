@@ -25,7 +25,10 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             ffmpeg \
-            libsecret-1-dev
+            libsecret-1-dev \
+            pipewire \
+            pipewire-pulse \
+            wireplumber
 
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -46,21 +49,17 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME:-v0.1.0}"
           ARCHIVE_NAME="audiodub-${TAG}-linux-x86_64"
-          
           mkdir -p "${ARCHIVE_NAME}/bin"
           mkdir -p "${ARCHIVE_NAME}/share/applications"
           mkdir -p "${ARCHIVE_NAME}/share/icons/hicolor/scalable/apps"
           mkdir -p "${ARCHIVE_NAME}/share/metainfo"
-
           cp target/release/audiodub "${ARCHIVE_NAME}/bin/"
           cp data/io.github.digitalninjanv.AudioDub.desktop "${ARCHIVE_NAME}/share/applications/"
           cp data/icons/hicolor/scalable/apps/io.github.digitalninjanv.AudioDub.svg "${ARCHIVE_NAME}/share/icons/hicolor/scalable/apps/"
           cp data/io.github.digitalninjanv.AudioDub.metainfo.xml "${ARCHIVE_NAME}/share/metainfo/"
           cp LICENSE README.md "${ARCHIVE_NAME}/"
-
           tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}"
           sha256sum "${ARCHIVE_NAME}.tar.gz" > checksums.sha256
-
           echo "archive_name=${ARCHIVE_NAME}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
