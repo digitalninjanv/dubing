@@ -10,20 +10,14 @@ pub struct AudioStreamCapture;
 
 impl AudioStreamCapture {
     /// Capture 16 kHz signed-16 mono PCM for the Live API.
-    ///
-    /// Linux-first strategy:
-    /// 1. Prefer PipeWire's native `pw-cat` when available.
-    /// 2. Fall back to FFmpeg's PulseAudio interface for older/minimal systems.
+    /// PipeWire's native `pw-cat` is preferred; FFmpeg/PulseAudio is the compatibility fallback.
     pub async fn start_capture(
         source_name: &str,
         chunk_tx: Sender<Vec<u8>>,
         cancel_token: CancellationToken,
     ) -> Result<(), DomainError> {
-        let effective_source = if source_name.is_empty() || source_name == "@DEFAULT_SOURCE@" {
-            "default"
-        } else {
-            source_name
-        };
+        let is_default = source_name.is_empty() || source_name == "@DEFAULT_SOURCE@" || source_name == "default";
+        let effective_source = if is_default { "default" } else { source_name };
 
         let use_pw_cat = Command::new("pw-cat")
             .arg("--version")
@@ -36,11 +30,15 @@ impl AudioStreamCapture {
         info!("Starting live capture from '{}' using {} backend", effective_source, backend);
 
         let mut child = if use_pw_cat {
-            Command::new("pw-cat")
-                .args([
-                    "--record", "--raw", "--rate", "16000", "--channels", "1",
-                    "--format", "s16", "--latency", "20ms", "--target", effective_source, "-",
-                ])
+            let mut cmd = Command::new("pw-cat");
+            cmd.args([
+                "--record", "--raw", "--rate", "16000", "--channels", "1",
+                "--format", "s16", "--latency", "20ms",
+            ]);
+            if !is_default {
+                cmd.args(["--target", effective_source]);
+            }
+            cmd.arg("-")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
