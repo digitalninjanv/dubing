@@ -28,13 +28,12 @@ impl GeminiLiveStreamer {
     }
 
     /// Connects to the Gemini Multimodal Live API WebSocket and runs continuous bidirectional
-    /// audio streaming:
-    /// - Consumes 16kHz PCM chunks from `input_rx`
-    /// - Emits synthesized 24kHz PCM chunks to `output_tx`
-    /// - Emits real-time transcript updates to `transcript_tx`
+    /// audio streaming.
     ///
     /// Uses official Live Translation configuration for gemini-3.5-live-translate-preview
     /// (translationConfig + input/output transcriptions) per Google AI docs 2026.
+    /// Handshake is hardened: dual transcription placement, binary-frame support,
+    /// full message logging, 25s timeout.
     pub async fn run_live_session(
         &self,
         config: LiveStreamSessionConfig<'_>,
@@ -60,15 +59,16 @@ impl GeminiLiveStreamer {
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // Build official setup payload — critical fix for Live Translate model
+        // Build setup payload. For Live Translate we place transcriptions BOTH at
+        // setup top-level (production examples / livekit) AND inside generationConfig
+        // (official docs) for maximum compatibility.
         let setup_msg = match config.model_choice {
             LiveModelChoice::Gemini35LiveTranslate => {
-                // Official Live Translation setup (Google AI docs July 2026+)
-                // systemInstruction is accepted but SILENTLY IGNORED on this model.
-                // Must use translationConfig + transcriptions.
                 serde_json::json!({
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
+                        "inputAudioTranscription": {},
+                        "outputAudioTranscription": {},
                         "generationConfig": {
                             "responseModalities": ["AUDIO"],
                             "inputAudioTranscription": {},
@@ -82,8 +82,6 @@ impl GeminiLiveStreamer {
                 })
             }
             LiveModelChoice::Gemini31FlashLive | LiveModelChoice::Gemini25FlashNativeAudio => {
-                // Conversational / native-audio fallback models still benefit from
-                // systemInstruction + optional voiceConfig.
                 serde_json::json!({
                     "setup": {
                         "model": format!("models/{}", config.model_choice.model_id()),
@@ -125,15 +123,21 @@ impl GeminiLiveStreamer {
             }
         };
 
+        let setup_str = setup_msg.to_string();
+        info!("Sending Live API setup message ({} bytes)", setup_str.len());
+        debug!("Setup payload: {}", setup_str);
+
         ws_sender
-            .send(Message::Text(setup_msg.to_string()))
+            .send(Message::Text(setup_str))
             .await
             .map_err(|e| {
                 DomainError::TransientError(format!("Failed to send Live API setup message: {}", e))
             })?;
 
-        // 1. Handshake Phase: Must wait for setupComplete before sending any realtimeInput
+        // Handshake: wait for setupComplete. Handle Text + Binary frames, log everything.
         info!("Waiting for Gemini Live API setupComplete acknowledgment...");
+        let mut last_raw: Option<String> = None;
+
         loop {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
@@ -143,21 +147,23 @@ impl GeminiLiveStreamer {
                 msg_res = ws_receiver.next() => {
                     match msg_res {
                         Some(Ok(Message::Text(text))) => {
-                            debug!("Live API Handshake response: {}", text);
-                            if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
-                                if let Some(err) = parsed.get("error") {
-                                    let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown Live API error");
-                                    let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-                                    error!("Gemini Live API handshake rejected: {} (code {})", msg, code);
-                                    let _ = ws_sender.close().await;
-                                    if code == 429 {
-                                        return Err(DomainError::TransientError(format!("Live API rate limited (429): {}", msg)));
-                                    } else {
-                                        return Err(DomainError::PermanentApiError(format!("Live API setup rejected: {}", msg)));
-                                    }
+                            info!("Live API handshake Text frame ({} bytes)", text.len());
+                            debug!("Handshake Text: {}", text);
+                            last_raw = Some(text.clone());
+                            if let Some(result) = Self::process_handshake_payload(&text, &mut ws_sender).await? {
+                                if result {
+                                    break; // setupComplete received
                                 }
-                                if parsed.get("setupComplete").or_else(|| parsed.get("setup_complete")).is_some() {
-                                    info!("Gemini Live API setup complete! Ready for real-time audio streaming.");
+                            }
+                        }
+                        Some(Ok(Message::Binary(bin))) => {
+                            // Some clients/servers exchange JSON as binary frames
+                            let text = String::from_utf8_lossy(&bin).to_string();
+                            info!("Live API handshake BINARY frame ({} bytes)", bin.len());
+                            debug!("Handshake binary-as-text: {}", text);
+                            last_raw = Some(text.clone());
+                            if let Some(result) = Self::process_handshake_payload(&text, &mut ws_sender).await? {
+                                if result {
                                     break;
                                 }
                             }
@@ -165,10 +171,12 @@ impl GeminiLiveStreamer {
                         Some(Ok(Message::Ping(p))) => {
                             let _ = ws_sender.send(Message::Pong(p)).await;
                         }
+                        Some(Ok(Message::Pong(_))) => {}
                         Some(Ok(Message::Close(reason))) => {
+                            let detail = last_raw.as_deref().unwrap_or("(no prior payload)");
                             return Err(DomainError::TransientError(format!(
-                                "Gemini Live API closed connection during handshake: {:?}",
-                                reason
+                                "Gemini Live API closed during handshake: {:?}. Last payload: {}",
+                                reason, detail
                             )));
                         }
                         Some(Err(e)) => {
@@ -178,23 +186,29 @@ impl GeminiLiveStreamer {
                             )));
                         }
                         None => {
-                            return Err(DomainError::TransientError(
-                                "Gemini Live API connection closed unexpectedly during handshake".to_string(),
-                            ));
+                            let detail = last_raw.as_deref().unwrap_or("(no prior payload)");
+                            return Err(DomainError::TransientError(format!(
+                                "Gemini Live API connection closed unexpectedly during handshake. Last payload: {}",
+                                detail
+                            )));
                         }
                         _ => {}
                     }
                 }
-                _ = tokio::time::sleep(std::time::Duration::from_secs(15)) => {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(25)) => {
+                    let detail = last_raw.as_deref().unwrap_or("(no response received at all)");
                     let _ = ws_sender.close().await;
-                    return Err(DomainError::TransientError(
-                        "Timed out waiting for Gemini Live API setupComplete acknowledgment (15s)".to_string(),
-                    ));
+                    return Err(DomainError::TransientError(format!(
+                        "Timed out waiting for Gemini Live API setupComplete (25s). Last server payload: {}. \
+Check: (1) API key has Live API / Live Translate access, (2) model gemini-3.5-live-translate-preview is available in your region/tier, (3) network allows WSS to generativelanguage.googleapis.com",
+                        detail
+                    )));
                 }
             }
         }
 
-        debug!("Gemini Live API handshake established. Streaming audio chunks in real-time...");
+        info!("Gemini Live API setup complete! Ready for real-time audio streaming.");
+        debug!("Streaming audio chunks in real-time...");
 
         let mut chunks_sent: u64 = 0;
 
@@ -211,13 +225,10 @@ impl GeminiLiveStreamer {
                     break;
                 }
 
-                // Forward incoming 16kHz PCM audio using official realtimeInput.audio shape
-                // (preferred) with mediaChunks fallback for compatibility.
                 maybe_chunk = input_rx.recv() => {
                     match maybe_chunk {
                         Some(raw_chunk) => {
                             let b64 = base64::engine::general_purpose::STANDARD.encode(&raw_chunk);
-                            // Prefer the documented `audio` field for Live Translation
                             let audio_msg = serde_json::json!({
                                 "realtimeInput": {
                                     "audio": {
@@ -242,12 +253,10 @@ impl GeminiLiveStreamer {
                     }
                 }
 
-                // Handle incoming server responses from Gemini
                 msg_res = ws_receiver.next() => {
                     match msg_res {
                         Some(Ok(Message::Text(text))) => {
                             if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
-                                // Check for API errors
                                 if let Some(err) = parsed.get("error") {
                                     let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown Live API error");
                                     let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
@@ -267,7 +276,6 @@ impl GeminiLiveStreamer {
                                     let mut original_text: Option<String> = None;
                                     let mut translated_text: Option<String> = None;
 
-                                    // 1. Audio synthesis parts
                                     let model_turn = server_content
                                         .get("modelTurn")
                                         .or_else(|| server_content.get("model_turn"));
@@ -296,7 +304,6 @@ impl GeminiLiveStreamer {
                                         }
                                     }
 
-                                    // 2. Input transcription
                                     let input_trans = server_content
                                         .get("inputTranscription")
                                         .or_else(|| server_content.get("input_transcription"))
@@ -309,7 +316,6 @@ impl GeminiLiveStreamer {
                                         }
                                     }
 
-                                    // 3. Output transcription
                                     let output_trans = server_content
                                         .get("outputTranscription")
                                         .or_else(|| server_content.get("output_transcription"))
@@ -345,7 +351,6 @@ impl GeminiLiveStreamer {
                             }
                         }
                         Some(Ok(Message::Binary(bin))) => {
-                            // Direct PCM output if sent in binary mode
                             let _ = output_tx.send(bin).await;
                         }
                         Some(Ok(Message::Ping(p))) => {
@@ -359,9 +364,7 @@ impl GeminiLiveStreamer {
                             warn!("WebSocket receive error: {}", e);
                             break;
                         }
-                        None => {
-                            break;
-                        }
+                        None => break,
                         _ => {}
                     }
                 }
@@ -370,5 +373,45 @@ impl GeminiLiveStreamer {
 
         info!("Live streaming session completed. Total audio chunks sent: {}", chunks_sent);
         Ok(())
+    }
+
+    /// Returns Ok(Some(true)) if setupComplete was found, Ok(Some(false)) if message was handled but not complete,
+    /// Ok(None) if not a relevant payload, Err on fatal API error.
+    async fn process_handshake_payload(
+        text: &str,
+        ws_sender: &mut (impl SinkExt<Message> + Unpin),
+    ) -> Result<Option<bool>, DomainError> {
+        let parsed: Value = match serde_json::from_str(text) {
+            Ok(v) => v,
+            Err(_) => return Ok(None),
+        };
+
+        if let Some(err) = parsed.get("error") {
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown Live API error");
+            let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+            error!("Gemini Live API handshake rejected: {} (code {})", msg, code);
+            let _ = ws_sender.close().await;
+            if code == 429 {
+                return Err(DomainError::TransientError(format!(
+                    "Live API rate limited (429): {}",
+                    msg
+                )));
+            } else {
+                return Err(DomainError::PermanentApiError(format!(
+                    "Live API setup rejected: {} (code {})",
+                    msg, code
+                )));
+            }
+        }
+
+        if parsed.get("setupComplete").or_else(|| parsed.get("setup_complete")).is_some() {
+            return Ok(Some(true));
+        }
+
+        // Any other message is logged but we keep waiting
+        Ok(Some(false))
     }
 }
