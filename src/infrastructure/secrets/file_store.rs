@@ -64,27 +64,37 @@ impl SecretStore for StandardSecretStore {
         let trimmed = key.trim();
         let content = format!("{}={}\n", KEY_NAME, trimmed);
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&self.fallback_path)
-            .map_err(|e| {
-                DomainError::Internal(format!(
-                    "Failed to open credentials file for writing: {}",
-                    e
-                ))
-            })?;
-
-        // Secure file permissions on Unix: 0600 (owner read/write only)
-        #[cfg(unix)]
+        // Atomic write (tmp + rename) so a crash never leaves a torn file.
+        let tmp_path = self.fallback_path.with_extension("tmp");
         {
-            let perms = fs::Permissions::from_mode(0o600);
-            let _ = file.set_permissions(perms);
-        }
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&tmp_path)
+                .map_err(|e| {
+                    DomainError::Internal(format!(
+                        "Failed to open credentials file for writing: {}",
+                        e
+                    ))
+                })?;
 
-        file.write_all(content.as_bytes())
-            .map_err(|e| DomainError::Internal(format!("Failed to write credentials: {}", e)))?;
+            // Secure file permissions on Unix: 0600 (owner read/write only)
+            #[cfg(unix)]
+            {
+                let perms = fs::Permissions::from_mode(0o600);
+                let _ = file.set_permissions(perms);
+            }
+
+            file.write_all(content.as_bytes()).map_err(|e| {
+                DomainError::Internal(format!("Failed to write credentials: {}", e))
+            })?;
+            file.sync_all()
+                .map_err(|e| DomainError::Internal(format!("Failed to sync credentials: {}", e)))?;
+        }
+        fs::rename(&tmp_path, &self.fallback_path).map_err(|e| {
+            DomainError::Internal(format!("Failed to publish credentials file: {}", e))
+        })?;
 
         Ok(())
     }

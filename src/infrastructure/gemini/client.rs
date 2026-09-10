@@ -7,6 +7,25 @@ use tracing::warn;
 
 pub type RetryStatusCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// Shared HTTP client: one connection pool per process instead of a fresh
+/// TLS/pool setup per `GeminiClient::new` (which is built per job/click).
+fn shared_http_client() -> Client {
+    use std::sync::OnceLock;
+    static HTTP: OnceLock<Client> = OnceLock::new();
+    HTTP.get_or_init(|| {
+        Client::builder()
+            .timeout(Duration::from_secs(120))
+            .tcp_nodelay(true)
+            .tcp_keepalive(Duration::from_secs(60))
+            .pool_max_idle_per_host(25)
+            .pool_idle_timeout(Duration::from_secs(120))
+            .http2_adaptive_window(true)
+            .build()
+            .unwrap_or_default()
+    })
+    .clone()
+}
+
 #[derive(Clone)]
 pub struct GeminiClient {
     http: Client,
@@ -14,24 +33,18 @@ pub struct GeminiClient {
     base_url: String,
     backoffs: Vec<u64>,
     status_callback: Option<RetryStatusCallback>,
+    cancel_token: Option<CancellationToken>,
 }
 
 impl GeminiClient {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            http: Client::builder()
-                .timeout(Duration::from_secs(120))
-                .tcp_nodelay(true)
-                .tcp_keepalive(Duration::from_secs(60))
-                .pool_max_idle_per_host(25)
-                .pool_idle_timeout(Duration::from_secs(120))
-                .http2_adaptive_window(true)
-                .build()
-                .unwrap_or_default(),
+            http: shared_http_client(),
             api_key: api_key.into(),
             base_url: "https://generativelanguage.googleapis.com".to_string(),
             backoffs: vec![3, 8, 15, 25, 35],
             status_callback: None,
+            cancel_token: None,
         }
     }
 
@@ -47,6 +60,13 @@ impl GeminiClient {
 
     pub fn with_status_callback(mut self, cb: RetryStatusCallback) -> Self {
         self.status_callback = Some(cb);
+        self
+    }
+
+    /// Attach a cancellation token so retry/backoff sleeps abort instantly
+    /// on user cancel instead of hanging up to 35s.
+    pub fn with_cancel_token(mut self, token: CancellationToken) -> Self {
+        self.cancel_token = Some(token);
         self
     }
 
@@ -76,10 +96,16 @@ impl GeminiClient {
             return Err(DomainError::AuthenticationFailed);
         }
 
-        let url = format!("{}/v1beta/models?key={}", self.base_url, self.api_key);
-        let resp = self.http.get(&url).send().await.map_err(|e| {
-            DomainError::TransientError(format!("Network connection failed: {}", e))
-        })?;
+        let url = format!("{}/v1beta/models", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .header("x-goog-api-key", self.api_key.clone())
+            .send()
+            .await
+            .map_err(|e| {
+                DomainError::TransientError(format!("Network connection failed: {}", e))
+            })?;
 
         let status = resp.status();
         if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
@@ -134,7 +160,8 @@ impl GeminiClient {
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<Response, reqwest::Error>>,
     {
-        self.post_with_retry_cancel(operation_name, make_request, None)
+        let cancel = self.cancel_token.clone();
+        self.post_with_retry_cancel(operation_name, make_request, cancel)
             .await
     }
 

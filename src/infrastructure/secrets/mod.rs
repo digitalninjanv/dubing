@@ -1,3 +1,3 @@
-pub mod keyring;
+pub mod file_store;
 
-pub use keyring::StandardSecretStore;
+pub use file_store::StandardSecretStore;

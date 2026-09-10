@@ -45,17 +45,20 @@ impl GeminiFilesApi {
             ));
         }
 
-        let url = format!(
-            "{}/upload/v1beta/files?key={}",
-            self.client.base_url(),
-            self.client.api_key()
-        );
+        let url = format!("{}/upload/v1beta/files", self.client.base_url());
+        let api_key = self.client.api_key().to_string();
 
         let mut headers = HeaderMap::new();
         headers.insert(
             "X-Goog-Upload-Protocol",
             "multipart".parse().map_err(|e| {
                 DomainError::Internal(format!("Failed to build upload headers: {}", e))
+            })?,
+        );
+        headers.insert(
+            "x-goog-api-key",
+            api_key.parse().map_err(|e| {
+                DomainError::Internal(format!("Failed to build auth header: {}", e))
             })?,
         );
 
@@ -186,17 +189,19 @@ impl GeminiFilesApi {
     }
 
     pub async fn wait_for_active(&self, file_name: &str) -> Result<GeminiFileInfo, DomainError> {
-        let url = format!(
-            "{}/v1beta/{}?key={}",
-            self.client.base_url(),
-            file_name,
-            self.client.api_key()
-        );
+        let url = format!("{}/v1beta/{}", self.client.base_url(), file_name);
+        let api_key = self.client.api_key().to_string();
 
         // Exponential backoff with jitter (R1): avoid hammering 15×1s fixed.
         let backoffs = [500u64, 800, 1200, 1800, 2500, 3500, 5000, 7000];
         for (i, delay) in backoffs.iter().enumerate() {
-            let resp = self.client.http().get(&url).send().await;
+            let resp = self
+                .client
+                .http()
+                .get(&url)
+                .header("x-goog-api-key", api_key.clone())
+                .send()
+                .await;
             if let Ok(response) = resp {
                 if response.status().is_success() {
                     if let Ok(data) = response.json::<GeminiFileResponse>().await {
@@ -228,7 +233,13 @@ impl GeminiFilesApi {
         }
 
         // Fallback: fetch final state or return
-        let final_resp = self.client.http().get(&url).send().await;
+        let final_resp = self
+            .client
+            .http()
+            .get(&url)
+            .header("x-goog-api-key", api_key.clone())
+            .send()
+            .await;
         if let Ok(resp) = final_resp {
             if let Ok(data) = resp.json::<GeminiFileResponse>().await {
                 return Ok(data.file);
@@ -241,15 +252,9 @@ impl GeminiFilesApi {
     }
 
     pub async fn delete_file(&self, file_name: &str) -> Result<(), DomainError> {
-        let url = format!(
-            "{}/v1beta/{}?key={}",
-            self.client.base_url(),
-            file_name,
-            self.client.api_key()
-        );
+        let url = format!("{}/v1beta/{}", self.client.base_url(), file_name);
 
-        // Reuse the pooled client (connection reuse) and send the key via
-        // header as well so server-side URL logs never see the secret alone.
+        // Header-only auth so server-side URL logs never see the secret.
         let api_key = self.client.api_key().to_string();
         let _ = self
             .client

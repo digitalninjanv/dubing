@@ -151,10 +151,9 @@ Transcript segments:
             }
 
             let endpoint = format!(
-                "{}/v1beta/models/{}:generateContent?key={}",
+                "{}/v1beta/models/{}:generateContent",
                 self.client.base_url(),
                 model,
-                self.client.api_key()
             );
 
             let op_name = format!("Gemini Translation ({})", model);

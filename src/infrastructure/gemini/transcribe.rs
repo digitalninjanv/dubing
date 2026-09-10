@@ -117,10 +117,9 @@ impl GeminiTranscriber {
 
         for model in models {
             let endpoint = format!(
-                "{}/v1beta/models/{}:generateContent?key={}",
+                "{}/v1beta/models/{}:generateContent",
                 self.client.base_url(),
                 model,
-                self.client.api_key()
             );
 
             let lang_instruction = if source_hint.is_auto() {
@@ -382,10 +381,9 @@ Respond with ONLY a valid JSON object matching this schema:
 
         for model in models {
             let endpoint = format!(
-                "{}/v1beta/models/{}:generateContent?key={}",
+                "{}/v1beta/models/{}:generateContent",
                 self.client.base_url(),
                 model,
-                self.client.api_key()
             );
 
             let http_client = self.client.http().clone();
@@ -521,11 +519,7 @@ impl SpeechTranscriber for GeminiTranscriber {
             .await?;
 
         // 2. Prepare request for Interactions API
-        let endpoint = format!(
-            "{}/v1beta/interactions?key={}",
-            self.client.base_url(),
-            self.client.api_key()
-        );
+        let endpoint = format!("{}/v1beta/interactions", self.client.base_url(),);
 
         let mut transcription_config = json!({
             "mode": {

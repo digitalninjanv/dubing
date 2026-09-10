@@ -102,11 +102,7 @@ impl GeminiSynthesizer {
         segment: &TranslationSegment,
         voice: &VoiceProfile,
     ) -> Result<Vec<u8>, DomainError> {
-        let endpoint = format!(
-            "{}/v1beta/interactions?key={}",
-            self.client.base_url(),
-            self.client.api_key()
-        );
+        let endpoint = format!("{}/v1beta/interactions", self.client.base_url(),);
 
         let prompt = match &voice.style {
             Some(style) if !style.trim().is_empty() => {
@@ -186,10 +182,9 @@ impl GeminiSynthesizer {
         output_path: &Path,
     ) -> Result<SynthesizedSegment, DomainError> {
         let endpoint = format!(
-            "{}/v1beta/models/{}:generateContent?key={}",
+            "{}/v1beta/models/{}:generateContent",
             self.client.base_url(),
             model,
-            self.client.api_key()
         );
 
         let duration_hint = if segment.target_duration_ms() > 0 {

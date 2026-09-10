@@ -16,7 +16,9 @@ use crate::infrastructure::gemini::{
 };
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -380,7 +382,9 @@ impl MainWindow {
                     let _ = sender_retry.send_blocking(UiMessage::ProgressDetail(msg.to_string()));
                 });
 
-                let gemini_client = GeminiClient::new(api_key).with_status_callback(status_cb);
+                let gemini_client = GeminiClient::new(api_key)
+                    .with_status_callback(status_cb)
+                    .with_cancel_token(cancel_token.clone());
                 let transcriber = Arc::new(GeminiTranscriber::new(
                     gemini_client.clone(),
                     settings_bg.models.transcriber.clone(),
@@ -436,6 +440,8 @@ impl MainWindow {
             let settings_tts = settings.clone();
             let toast_tts = toast_overlay.clone();
             let win_tts = window.downgrade();
+            let tts_cancel_exec: Rc<RefCell<Option<CancellationToken>>> =
+                Rc::new(RefCell::new(None));
 
             tts_view.connect_generate_clicked(move || {
                 let text = tts_exec.text();
@@ -463,18 +469,28 @@ impl MainWindow {
                 let style = voice.style.clone();
                 let view_bg = tts_exec.clone();
                 let settings_bg = settings_tts.clone();
+                // Cancel any in-flight generation before starting a new one.
+                if let Some(old) = tts_cancel_exec.borrow().as_ref() {
+                    old.cancel();
+                }
+                let tts_token = CancellationToken::new();
+                *tts_cancel_exec.borrow_mut() = Some(tts_token.clone());
                 view_bg.set_generating(true, "Synthesizing speech...");
 
                 let (tx, rx) = async_channel::bounded::<Result<(PathBuf, u64), String>>(1);
                 tokio::spawn(async move {
                     let res: Result<(PathBuf, u64), String> = async {
-                        let client = GeminiClient::new(api_key);
+                        let client = GeminiClient::new(api_key).with_cancel_token(tts_token);
                         let synth = GeminiSynthesizer::new(client, settings_bg.models.tts.clone());
                         let ts = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs())
                             .unwrap_or(0);
-                        let out = AppPaths::outputs_dir().join(format!("tts_studio_{}.wav", ts));
+                        let out = AppPaths::outputs_dir().join(format!(
+                            "tts_studio_{}_{}.wav",
+                            ts,
+                            std::process::id()
+                        ));
                         if let Some(p) = out.parent() {
                             let _ = std::fs::create_dir_all(p);
                         }
@@ -528,8 +544,15 @@ impl MainWindow {
             });
 
             // Play: ffplay -> pw-play -> xdg-open, loud toast if all fail.
+            // Tracks the player process so a new play kills the previous one.
             let toast_play = toast_overlay.clone();
+            let player_handle: Rc<RefCell<Option<std::process::Child>>> =
+                Rc::new(RefCell::new(None));
             tts_view.connect_play_clicked(move |path| {
+                if let Some(mut old) = player_handle.borrow_mut().take() {
+                    let _ = old.kill();
+                    let _ = old.wait();
+                }
                 let arg = path.to_string_lossy().to_string();
                 let attempts: &[&[&str]] = &[
                     &["ffplay", "-nodisp", "-autoexit", "-loglevel", "error"],
@@ -540,8 +563,11 @@ impl MainWindow {
                     for a in &attempt[1..] {
                         cmd.arg(a);
                     }
-                    match cmd.arg(&arg).spawn() {
-                        Ok(_) => return,
+                    match cmd.arg(&arg).stdin(std::process::Stdio::null()).spawn() {
+                        Ok(child) => {
+                            *player_handle.borrow_mut() = Some(child);
+                            return;
+                        }
                         Err(_) => continue,
                     }
                 }
@@ -556,39 +582,48 @@ impl MainWindow {
                 }
             });
 
-            // Export: WAV preview -> MP3 in outputs dir.
+            // Export: WAV preview -> MP3 in outputs dir (off the UI thread).
             let toast_exp = toast_overlay.clone();
             tts_view.connect_export_clicked(move |path| {
                 let mp3 = path.with_extension("mp3");
-                let mp3_disp = mp3.display().to_string();
-                match std::process::Command::new("ffmpeg")
-                    .arg("-y")
-                    .arg("-i")
-                    .arg(&path)
-                    .arg("-c:a")
-                    .arg("libmp3lame")
-                    .arg("-b:a")
-                    .arg("192k")
-                    .arg(&mp3)
-                    .output()
-                {
-                    Ok(out) if out.status.success() => {
-                        toast_exp.add_toast(libadwaita::Toast::new(&format!(
-                            "Exported MP3: {}",
-                            mp3_disp
-                        )));
+                let (tx, rx) = async_channel::bounded::<Result<String, String>>(1);
+                std::thread::spawn(move || {
+                    let res = match std::process::Command::new("ffmpeg")
+                        .arg("-y")
+                        .arg("-i")
+                        .arg(&path)
+                        .arg("-c:a")
+                        .arg("libmp3lame")
+                        .arg("-b:a")
+                        .arg("192k")
+                        .arg(&mp3)
+                        .output()
+                    {
+                        Ok(out) if out.status.success() => Ok(mp3.display().to_string()),
+                        Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                        Err(e) => Err(e.to_string()),
+                    };
+                    let _ = tx.send_blocking(res);
+                });
+                let toast_done = toast_exp.clone();
+                glib::spawn_future_local(async move {
+                    if let Ok(res) = rx.recv().await {
+                        match res {
+                            Ok(disp) => {
+                                toast_done.add_toast(libadwaita::Toast::new(&format!(
+                                    "Exported MP3: {}",
+                                    disp
+                                )));
+                            }
+                            Err(e) => {
+                                toast_done.add_toast(libadwaita::Toast::new(&format!(
+                                    "Export failed: {}",
+                                    e
+                                )));
+                            }
+                        }
                     }
-                    Ok(out) => {
-                        toast_exp.add_toast(libadwaita::Toast::new(&format!(
-                            "Export failed: {}",
-                            String::from_utf8_lossy(&out.stderr).trim()
-                        )));
-                    }
-                    Err(e) => {
-                        toast_exp
-                            .add_toast(libadwaita::Toast::new(&format!("Export failed: {}", e)));
-                    }
-                }
+                });
             });
         }
 

@@ -171,7 +171,8 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let job_repo = Arc::new(FileJobRepository::new());
 
     let settings = AppSettings::default();
-    let client = GeminiClient::new(api_key);
+    let cancel_token = CancellationToken::new();
+    let client = GeminiClient::new(api_key).with_cancel_token(cancel_token.clone());
     let transcriber = Arc::new(GeminiTranscriber::new(
         client.clone(),
         settings.models.transcriber.clone(),
@@ -215,7 +216,6 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         tone.as_str()
     );
 
-    let cancel_token = CancellationToken::new();
     let artifact = orchestrator
         .run_job_with_options(job, pipeline_options, cancel_token, |j| {
             println!(
@@ -317,25 +317,6 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
     let audio_engine = Arc::new(FfmpegAudioEngine::new());
     let job_repo = Arc::new(FileJobRepository::new());
     let settings = AppSettings::default();
-    let client = GeminiClient::new(api_key);
-    let transcriber = Arc::new(GeminiTranscriber::new(
-        client.clone(),
-        settings.models.transcriber.clone(),
-    ));
-    let translator = Arc::new(GeminiTranslator::new(
-        client.clone(),
-        settings.models.translator.clone(),
-    ));
-    let synthesizer = Arc::new(GeminiSynthesizer::new(client, settings.models.tts.clone()));
-
-    let orchestrator = PipelineOrchestrator::with_settings(
-        transcriber,
-        translator,
-        synthesizer,
-        audio_engine.clone(),
-        job_repo,
-        &settings,
-    );
 
     let voice_config = if voice_1.is_some() || voice_2.is_some() {
         Some(SpeakerVoiceConfig::new(voice_1, voice_2))
@@ -368,6 +349,25 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
 
         let job = audiodub::domain::Job::new(doc, source_id.clone(), target_id.clone());
         let cancel_token = CancellationToken::new();
+        // Per-item client so retry backoffs observe this item's token.
+        let client = GeminiClient::new(api_key.clone()).with_cancel_token(cancel_token.clone());
+        let transcriber = Arc::new(GeminiTranscriber::new(
+            client.clone(),
+            settings.models.transcriber.clone(),
+        ));
+        let translator = Arc::new(GeminiTranslator::new(
+            client.clone(),
+            settings.models.translator.clone(),
+        ));
+        let synthesizer = Arc::new(GeminiSynthesizer::new(client, settings.models.tts.clone()));
+        let orchestrator = PipelineOrchestrator::with_settings(
+            transcriber,
+            translator,
+            synthesizer,
+            audio_engine.clone(),
+            job_repo.clone(),
+            &settings,
+        );
 
         let pipeline_options = PipelineOptions {
             tone,
