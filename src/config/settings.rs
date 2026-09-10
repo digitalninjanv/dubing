@@ -6,7 +6,6 @@ pub struct ModelsConfig {
     pub transcriber: String,
     pub translator: String,
     pub tts: String,
-    pub live_translate: String,
 }
 
 impl Default for ModelsConfig {
@@ -15,7 +14,6 @@ impl Default for ModelsConfig {
             transcriber: "gemini-3.5-transcribe".to_string(),
             translator: "gemini-3.1-flash-lite".to_string(),
             tts: "gemini-3.1-flash-tts-preview".to_string(),
-            live_translate: "gemini-3.5-live-translate-preview".to_string(),
         }
     }
 }

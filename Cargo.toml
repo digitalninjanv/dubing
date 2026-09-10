@@ -1,6 +1,6 @@
 [package]
 name = "audiodub"
-version = "0.4.11"
+version = "0.5.0"
 edition = "2021"
 authors = ["AudioDub Contributors"]
 description = "AI-powered desktop audio translation and dubbing for Linux"
@@ -15,7 +15,6 @@ glib = "0.20"
 # Async & Networking
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = { version = "0.7" }
-tokio-tungstenite = { version = "0.23", features = ["native-tls"] }
 async-channel = "2.3"
 futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
@@ -48,10 +47,6 @@ tokio-test = "0.4"
 [[test]]
 name = "domain_test"
 path = "tests/unit/domain_tests.rs"
-
-[[test]]
-name = "live_dubber_test"
-path = "tests/unit/live_dubber_test.rs"
 
 [[test]]
 name = "audio_engine_test"

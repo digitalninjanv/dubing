@@ -10,7 +10,7 @@
 
 **AudioDub AI** adalah aplikasi desktop Linux modern (*GTK4 + Libadwaita + Rust*) berkinerja tinggi yang dirancang untuk penerjemahan berkas audio dan video, *voice dubbing* otomatis dengan sinkronisasi waktu presisi (*isochronous dubbing*), peredaman musik latar (*audio ducking*), penyematan subtitle otomatis (*soft subtitles*), serta produksi suara sintetis ekspresif melalui **TTS Studio**.
 
-Aplikasi ini menggabungkan kecerdasan multimodal Google Gemini terbaru (`gemini-3.5-transcribe`, `gemini-3.1-flash-lite`, `gemini-3.1-flash-tts-preview`, `gemini-3.5-live-translate-preview`) dengan pemrosesan audio/video lokal deterministik via FFmpeg, menghasilkan hasil dubbing yang natural, tepat waktu, dan bebas distorsi.
+Aplikasi ini menggabungkan kecerdasan multimodal Google Gemini terbaru (`gemini-3.5-transcribe`, `gemini-3.1-flash-lite`, `gemini-3.1-flash-tts-preview`) dengan pemrosesan audio/video lokal deterministik via FFmpeg, menghasilkan hasil dubbing yang natural, tepat waktu, dan bebas distorsi.
 
 ---
 
@@ -57,9 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 ### 🎙️ 1. Studio Multimodal Audio & Video Dubbing
 - **Dukungan Format Luas:** Menerima input audio (`MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus`) dan kontainer video (`MP4, MKV, MOV, WebM`) hingga ukuran **4 GB**.
 - **⚡ Ultra-Fast Local Audio Pre-Extraction:** Untuk berkas video berukuran ratusan MB atau beberapa GB, AudioDub AI mengekstrak trek audio ringan (128 kbps 24 kHz mono MP3) secara lokal dalam **< 1 detik**, memangkas waktu unggah ke Google API dari ~5 menit menjadi seketika.
-- **Dual Dubbing Engine:**
-  - **Studio Multi-Stage:** Alur produksi lengkap dengan diarization transkripsi, terjemahan terstruktur, sintesis suara paralel, dan penyelarasan tempo.
-  - **Live Fast Translate:** Menggunakan model `gemini-3.5-live-translate-preview` untuk proses kilat satu tahap.
+- **Studio Multi-Stage Engine:** Alur produksi lengkap dengan diarization transkripsi, terjemahan terstruktur, sintesis suara paralel, dan penyelarasan tempo.
 - **Speaker Diarization & 5-Voice Assignment:** Mengenali pergantian pembicara dan menyediakan alokasi suara aktor terpisah untuk Pembicara 1 dan Pembicara 2 dari roster lengkap 5 suara resmi Gemini: **Kore, Puck, Aoede, Charon, Fenrir**.
 - **Penyelarasan Waktu Presisi (*Isochronous Sync*):** Menyeimbangkan kuota karakter terjemahan, kompresi tempo cerdas via filter FFmpeg `atempo` (maksimal 1.25×), dan penyisipan jeda hening alami (*silence padding*).
 
@@ -82,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 - **Kaskade Fallback Multi-Model:** Jika kuota model utama `gemini-3.1-flash-tts-preview` penuh (HTTP 429) atau sedang maintenance, sistem secara otomatis beralih ke `gemini-2.5-flash-preview-tts` dan `gemini-2.5-pro-preview-tts` tanpa menggagalkan proses job.
 - **Countdown Timer Detik-demi-Detik:** Menampilkan hitungan mundur waktu reset kuota secara langsung pada tampilan progress bar.
 
-### ⚡ 6. Live API Key & Connection Validator
+### ⚡ 6. API Key & Connection Validator
 - Tombol **"Test Connection"** pada dialog Pengaturan (*Settings*) untuk memvalidasi API key secara instan via endpoint `GET /v1beta/models`.
 - Panggilan zero-token (*0 token generative*) yang aman dan memberikan konfirmasi visual apakah API key aktif dan kuota tersedia.
 
@@ -90,17 +88,6 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 - Memproduksi suara manusia sintetis langsung dari teks bebas tanpa berkas sumber.
 - Mendukung *Custom Style Directive* (arahan emosi dan gaya bicara bebas, misal: *"Bicara dengan nada berbisik, misterius, dan dramatis"*).
 - Kendali kecepatan berbicara (0.8× santai hingga 1.3× cepat) dengan pemutar audio dan ekspor MP3 instan.
-
-### 🔴 8. Live Stream Dubber (YouTube & Desktop Audio Tanpa Berkas)
-- **Zero Disk I/O (100% In-Memory):** Tidak memerlukan download atau simpan berkas di disk. Menangkap langsung audio yang sedang diputar di browser (YouTube, Twitch, berita luar negeri) atau mikrofon.
-- **Peredam Suara Asli Otomatis (*Virtual Null-Sink Isolation*):** Membuat virtual sink audio Linux (`module-null-sink`) secara otomatis. Suara asli bahasa Inggris dibungkam dari speaker fisik Anda, tetapi disadap secara internal oleh AudioDub AI.
-- **Streaming Dua Arah (Bi-directional WebSocket):** Terhubung langsung ke endpoint resmi `wss://generativelanguage.googleapis.com/.../BidiGenerateContent`. Mengirim potongan PCM 16 kHz (100 ms) dan menerima potongan suara PCM 24 kHz secara simultan.
-- **Model Primer & Fallback Cerdas:**
-  - **Primer:** `gemini-3.5-live-translate-preview` (khusus interpretasi simultan speech-to-speech).
-  - **Cadangan (Fallback):** `gemini-3.1-flash-live-preview` & `gemini-2.5-flash-preview-native-audio-dialog`.
-  - **Subtitles Only:** `gemini-3.5-transcribe-live` untuk closed captions langsung di layar.
-- **Latensi Ultra-Rendah:** Hasil dubbing terdengar di speaker hanya dalam **~600 ms – 800 ms** secara alami layaknya penerjemah simultan internasional.
-- **Live Subtitle & CC Display:** Menampilkan naskah asli bahasa asing dan naskah terjemahan secara berdampingan (*side-by-side*) secara real-time.
 
 ---
 
@@ -176,9 +163,6 @@ graph TD
 | **Terjemahan Teks** | `gemini-3.1-flash-lite` | `POST /v1beta/models/...:generateContent` | Structured JSON mode, alokasi timing budget per segmen, gaya bahasa dinamis. |
 | **Sintesis Suara (Primer)** | `gemini-3.1-flash-tts-preview` | `POST /v1beta/models/...:generateContent` | Native 24 kHz audio, multi-speaker profiling. |
 | **Sintesis Suara (Fallback 1)** | `gemini-2.5-flash-preview-tts` | `POST /v1beta/models/...:generateContent` | Otomatis aktif jika kuota model primer habis / rate limited. |
-| **Live Translation (Primary S2S)** | `gemini-3.5-live-translate-preview` | `WSS .../BidiGenerateContent` | Real-time speech-to-speech interpretation langsung ke speaker tanpa file. |
-| **Live Interpretation (Fallback)** | `gemini-3.1-flash-live-preview` | `WSS .../BidiGenerateContent` | Conversational live streaming fallback dengan prompt penerjemah simultan. |
-| **Live Subtitles (STT Only)** | `gemini-3.5-transcribe-live` | `WSS .../BidiGenerateContent` | Real-time audio-to-text streaming untuk closed captions instan. |
 | **Validasi Koneksi** | *Management Endpoint* | `GET /v1beta/models?key=...` | Zero-token validation untuk menguji keabsahan API Key. |
 
 ---
@@ -224,16 +208,13 @@ audiodub translate video.mp4 --source id --target en --tone casual --duck
 # 2. Dubbing audio dengan penetapan suara multi-speaker spesifik
 audiodub translate interview.mp3 --target ja --voice-1 Kore --voice-2 Puck --output interview_ja.mp3
 
-# 3. Menggunakan engine Live Fast Translate
-audiodub translate speech.wav --target es --live
-
-# 4. Batch processing banyak berkas media sekaligus dalam satu antrean
+# 3. Batch processing banyak berkas media sekaligus dalam satu antrean
 audiodub batch video1.mp4 video2.mkv clip.wav --target en --tone neutral
 
-# 5. Sintesis Text-to-Speech langsung melalui terminal
+# 4. Sintesis Text-to-Speech langsung melalui terminal
 audiodub tts "Halo! Ini adalah contoh sintesis suara instan." --voice Puck --speed 1.0 --output halo.mp3
 
-# 6. Text-to-Speech dengan arahan gaya bicara (AI Studio Style)
+# 5. Text-to-Speech dengan arahan gaya bicara (AI Studio Style)
 audiodub tts "Malam itu hening dan mencekam..." \
   --voice Charon \
   --style "Bicara seperti narator cerita horor dengan nada rendah, berat, dan jeda dramatis" \

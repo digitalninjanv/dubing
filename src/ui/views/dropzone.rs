@@ -1,6 +1,4 @@
-use crate::domain::{
-    DubbingEngine, LanguageId, LanguageRegistry, SpeakerVoiceConfig, TranslationTone,
-};
+use crate::domain::{LanguageId, LanguageRegistry, SpeakerVoiceConfig, TranslationTone};
 use crate::ui::components::LanguagePickerHelper;
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
@@ -17,7 +15,6 @@ pub struct DropzoneView {
     translate_btn: gtk4::Button,
     source_combo: libadwaita::ComboRow,
     target_combo: libadwaita::ComboRow,
-    engine_combo: libadwaita::ComboRow,
     tone_combo: libadwaita::ComboRow,
     ducking_switch: libadwaita::SwitchRow,
     review_switch: libadwaita::SwitchRow,
@@ -122,19 +119,6 @@ impl DropzoneView {
         pref_group.add(&source_combo);
         pref_group.add(&target_combo);
 
-        // Dubbing Engine Selector
-        let engine_items = [
-            "Studio Precision (gemini-3.5-transcribe + TTS)",
-            "Fast Live Translate (gemini-3.5-live-translate-preview)",
-        ];
-        let engine_model = gtk4::StringList::new(&engine_items);
-        let engine_combo = libadwaita::ComboRow::new();
-        engine_combo.set_title("Dubbing Engine");
-        engine_combo.set_subtitle("Studio precision or fast speech-to-speech live stream");
-        engine_combo.set_model(Some(&engine_model));
-        engine_combo.set_selected(0);
-        pref_group.add(&engine_combo);
-
         // Translation Tone Selector
         let tone_items = [
             "Neutral (Standard, natural speech)",
@@ -228,7 +212,6 @@ impl DropzoneView {
             translate_btn,
             source_combo,
             target_combo,
-            engine_combo,
             tone_combo,
             ducking_switch,
             review_switch,
@@ -261,12 +244,8 @@ impl DropzoneView {
         self.selected_path.borrow().clone()
     }
 
-    pub fn selected_engine(&self) -> DubbingEngine {
-        if self.engine_combo.selected() == 1 {
-            DubbingEngine::LiveTranslate
-        } else {
-            DubbingEngine::Studio
-        }
+    pub fn selected_engine(&self) -> crate::domain::DubbingEngine {
+        crate::domain::DubbingEngine::Studio
     }
 
     pub fn selected_source_language(&self) -> LanguageId {

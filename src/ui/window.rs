@@ -1,16 +1,18 @@
 use super::views::{
-    DropzoneView, HistoryView, LiveDubberView, ProgressView, ResultView, ReviewTranscriptView,
-    SettingsDialog, TtsStudioView,
+    DropzoneView, HistoryView, ProgressView, ResultView, ReviewTranscriptView, SettingsDialog,
+    TtsStudioView,
 };
 use crate::application::pipeline::ReviewRequest;
 use crate::application::ports::{AudioEngine, JobRepository, SecretStore, SpeechSynthesizer};
 use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
-use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
+use crate::domain::{
+    AudioArtifact, DomainError, DubbingEngine, Job, JobProgress, LanguageRegistry,
+};
 use crate::infrastructure::ffmpeg::FfmpegAligner;
 use crate::infrastructure::filesystem::AppPaths;
 use crate::infrastructure::gemini::{
-    GeminiClient, GeminiLiveTranslator, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
+    GeminiClient, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
 };
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
@@ -63,7 +65,6 @@ impl MainWindow {
         dubbing_stack.set_hexpand(true);
 
         let dropzone_view = DropzoneView::new(&registry);
-        let live_dubber_view = LiveDubberView::new(&registry);
         let progress_view = ProgressView::new();
         let review_view = ReviewTranscriptView::new();
         let result_view = ResultView::new();
@@ -92,12 +93,6 @@ impl MainWindow {
             "media-record-symbolic",
         );
         main_stack.add_titled_with_icon(
-            live_dubber_view.widget(),
-            Some("live"),
-            "Live Dubber",
-            "network-transmit-receive-symbolic",
-        );
-        main_stack.add_titled_with_icon(
             tts_view.widget(),
             Some("tts"),
             "TTS Studio",
@@ -108,15 +103,6 @@ impl MainWindow {
             Some("history"),
             "History",
             "document-open-recent-symbolic",
-        );
-
-        // Setup Live Dubber events and lifecycle
-        live_dubber_view.setup_events(
-            secret_store.clone(),
-            settings.clone(),
-            registry.clone(),
-            window.clone(),
-            toast_overlay.clone(),
         );
 
         // Top-level ViewSwitcher in HeaderBar for modern Adwaita workflow
@@ -331,7 +317,7 @@ impl MainWindow {
             let tgt_lang = dropzone_exec.selected_target_language();
             let tone = dropzone_exec.selected_tone();
             let voice_config = dropzone_exec.selected_voice_config();
-            let engine = dropzone_exec.selected_engine();
+            let engine = DubbingEngine::Studio;
             let duck_audio = dropzone_exec.is_ducking_enabled();
             let review_transcript = dropzone_exec.is_review_enabled();
 
@@ -404,12 +390,8 @@ impl MainWindow {
                     settings_bg.models.translator.clone(),
                 ));
                 let synthesizer = Arc::new(GeminiSynthesizer::new(
-                    gemini_client.clone(),
-                    settings_bg.models.tts.clone(),
-                ));
-                let live_translator = Arc::new(GeminiLiveTranslator::new(
                     gemini_client,
-                    settings_bg.models.live_translate.clone(),
+                    settings_bg.models.tts.clone(),
                 ));
 
                 let orchestrator = PipelineOrchestrator::with_settings(
@@ -419,8 +401,7 @@ impl MainWindow {
                     audio_engine_bg,
                     job_repo_bg,
                     &settings_bg,
-                )
-                .with_live_translator(live_translator);
+                );
 
                 let sender_progress = sender_clone.clone();
                 let on_progress = move |updated_job: &Job| {

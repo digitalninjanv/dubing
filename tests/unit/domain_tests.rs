@@ -329,9 +329,7 @@ fn test_dubbing_engine_variants_and_display() {
     let studio = DubbingEngine::Studio;
     assert_eq!(studio.as_str(), "studio");
     assert_eq!(DubbingEngine::default(), DubbingEngine::Studio);
-    let live = DubbingEngine::LiveTranslate;
-    assert_eq!(live.as_str(), "live");
-    assert!(format!("{}", live).contains("Live Fast Translate"));
+    assert!(format!("{}", studio).contains("Studio"));
 }
 
 #[test]
