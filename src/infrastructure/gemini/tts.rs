@@ -38,6 +38,17 @@ struct TtsCandidateContent {
 #[derive(Debug, Deserialize)]
 struct TtsResponse {
     candidates: Option<Vec<TtsCandidate>>,
+    /// Interactions API (`POST /v1beta/interactions`) returns decoded audio
+    /// under `output_audio.data` (SDK spelling `outputAudio` also tolerated).
+    #[serde(rename = "outputAudio")]
+    output_audio_camel: Option<InteractionsAudio>,
+    #[serde(rename = "output_audio")]
+    output_audio_snake: Option<InteractionsAudio>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InteractionsAudio {
+    data: Option<String>,
 }
 
 pub struct GeminiSynthesizer {
@@ -81,6 +92,91 @@ impl GeminiSynthesizer {
 
         wav
     }
+    /// Helper to execute TTS request against a specific Gemini model via the
+    /// Interactions API (`POST /v1beta/interactions`) — the current documented
+    /// TTS endpoint (ai.google.dev/gemini-api/docs speech-generation).
+    /// Returns the raw audio bytes (PCM 24kHz mono or WAV).
+    async fn try_interactions_with_model(
+        &self,
+        model: &str,
+        segment: &TranslationSegment,
+        voice: &VoiceProfile,
+    ) -> Result<Vec<u8>, DomainError> {
+        let endpoint = format!(
+            "{}/v1beta/interactions?key={}",
+            self.client.base_url(),
+            self.client.api_key()
+        );
+
+        let prompt = match &voice.style {
+            Some(style) if !style.trim().is_empty() => {
+                format!("{}\n{}", style.trim(), segment.translated_text)
+            }
+            _ => segment.translated_text.clone(),
+        };
+
+        let request_body = json!({
+            "model": model,
+            "input": prompt,
+            "response_format": { "type": "audio" },
+            "generation_config": {
+                "speech_config": [
+                    { "voice": voice.voice_name }
+                ]
+            }
+        });
+
+        let body_bytes = serde_json::to_vec(&request_body).map_err(|e| {
+            DomainError::Internal(format!("Failed to serialize TTS request: {}", e))
+        })?;
+
+        let http_client = self.client.http().clone();
+        let target_endpoint = endpoint.clone();
+        let op_name = format!("Gemini TTS interactions ({})", model);
+        let api_key = self.client.api_key().to_string();
+
+        let response = self
+            .client
+            .post_with_retry(&op_name, || {
+                let cli = http_client.clone();
+                let url = target_endpoint.clone();
+                let bytes = body_bytes.clone();
+                let key = api_key.clone();
+                async move {
+                    cli.post(&url)
+                        .header("Content-Type", "application/json")
+                        .header("x-goog-api-key", key)
+                        .body(bytes)
+                        .send()
+                        .await
+                }
+            })
+            .await?;
+
+        let parsed: TtsResponse = response.json().await.map_err(|e| {
+            DomainError::PermanentApiError(format!("Failed to parse TTS response: {}", e))
+        })?;
+
+        let base64_str = parsed
+            .output_audio_snake
+            .or(parsed.output_audio_camel)
+            .and_then(|a| a.data)
+            .ok_or_else(|| {
+                DomainError::PermanentApiError(
+                    "No output_audio data returned from Gemini TTS interactions".to_string(),
+                )
+            })?;
+
+        base64::engine::general_purpose::STANDARD
+            .decode(base64_str.trim())
+            .map_err(|e| {
+                DomainError::PermanentApiError(format!(
+                    "Failed to decode base64 audio bytes: {}",
+                    e
+                ))
+            })
+    }
+
     /// Helper to execute TTS request against a specific Gemini model
     async fn try_synthesize_with_model(
         &self,
@@ -218,6 +314,18 @@ impl GeminiSynthesizer {
             audio_bytes
         };
 
+        self.persist_segment_bytes(output_path, output_bytes, segment)
+            .await
+    }
+
+    /// Write decoded audio bytes to disk (wrapping raw PCM in WAV when needed)
+    /// and probe the resulting duration.
+    async fn persist_segment_bytes(
+        &self,
+        output_path: &Path,
+        output_bytes: Vec<u8>,
+        segment: &TranslationSegment,
+    ) -> Result<SynthesizedSegment, DomainError> {
         let mut file = File::create(output_path).map_err(|e| {
             DomainError::Internal(format!("Failed to create segment audio file: {}", e))
         })?;
@@ -227,8 +335,7 @@ impl GeminiSynthesizer {
         })?;
         drop(file);
 
-        // Probe the segment duration (F4: only probe; aligner reuses this
-        // duration instead of re-probing). Keep a single probe here.
+        // Probe the segment duration
         let p = output_path.to_path_buf();
         let metadata = tokio::task::spawn_blocking(move || FfprobeInspector::probe(&p))
             .await
@@ -271,6 +378,47 @@ impl SpeechSynthesizer for GeminiSynthesizer {
                 }
             }
 
+            // Primary: Interactions API (documented TTS endpoint).
+            match self
+                .try_interactions_with_model(model, segment, voice)
+                .await
+            {
+                Ok(raw_bytes) => {
+                    let output_bytes =
+                        if !raw_bytes.starts_with(b"RIFF") && !raw_bytes.starts_with(b"ID3") {
+                            Self::wrap_pcm_to_wav(&raw_bytes, 24000, 1)
+                        } else {
+                            raw_bytes
+                        };
+                    match self
+                        .persist_segment_bytes(output_path, output_bytes, segment)
+                        .await
+                    {
+                        Ok(res) => return Ok(res),
+                        Err(e) => {
+                            warn!(
+                                "TTS persist failed with model '{}': {}. Trying legacy endpoint...",
+                                model, e
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    if matches!(
+                        err,
+                        DomainError::Cancelled | DomainError::AuthenticationFailed
+                    ) {
+                        return Err(err);
+                    }
+                    warn!(
+                        "TTS interactions failed with model '{}': {}. Trying legacy generateContent...",
+                        model, err
+                    );
+                }
+            }
+
+            // Fallback: legacy generateContent endpoint (kept while Google
+            // keeps serving it).
             match self
                 .try_synthesize_with_model(model, segment, voice, output_path)
                 .await

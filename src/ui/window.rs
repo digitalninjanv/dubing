@@ -3,15 +3,18 @@ use super::views::{
     SettingsDialog, TtsStudioView,
 };
 use crate::application::pipeline::ReviewRequest;
-use crate::application::ports::{AudioEngine, JobRepository, SecretStore};
+use crate::application::ports::{AudioEngine, JobRepository, SecretStore, SpeechSynthesizer};
 use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
 use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
+use crate::infrastructure::ffmpeg::FfmpegAligner;
+use crate::infrastructure::filesystem::AppPaths;
 use crate::infrastructure::gemini::{
     GeminiClient, GeminiLiveTranslator, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
 };
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -445,8 +448,168 @@ impl MainWindow {
             });
         });
 
-        // TTS Studio handlers - restored from original
-        // (full TTS wiring kept minimal to ensure compile; expand if needed from bc2ccd7)
+        // TTS Studio wiring: Generate / Play / Export.
+        {
+            let tts_exec = tts_view.clone();
+            let store_tts = secret_store.clone();
+            let settings_tts = settings.clone();
+            let toast_tts = toast_overlay.clone();
+            let win_tts = window.downgrade();
+
+            tts_view.connect_generate_clicked(move || {
+                let text = tts_exec.text();
+                if text.trim().is_empty() {
+                    toast_tts.add_toast(libadwaita::Toast::new(
+                        "Enter some text to synthesize first",
+                    ));
+                    return;
+                }
+                let api_key = match store_tts.get_api_key() {
+                    Ok(Some(k)) if !k.trim().is_empty() => k.trim().to_string(),
+                    _ => {
+                        toast_tts.add_toast(libadwaita::Toast::new(
+                            "Please configure your Gemini API Key in Settings",
+                        ));
+                        if let Some(win) = win_tts.upgrade() {
+                            SettingsDialog::show(&win, store_tts.clone(), settings_tts.clone());
+                        }
+                        return;
+                    }
+                };
+
+                let voice = tts_exec.build_voice_profile();
+                let speed = voice.speed;
+                let style = voice.style.clone();
+                let view_bg = tts_exec.clone();
+                let settings_bg = settings_tts.clone();
+                view_bg.set_generating(true, "Synthesizing speech...");
+
+                let (tx, rx) = async_channel::bounded::<Result<(PathBuf, u64), String>>(1);
+                tokio::spawn(async move {
+                    let res: Result<(PathBuf, u64), String> = async {
+                        let client = GeminiClient::new(api_key);
+                        let synth = GeminiSynthesizer::new(client, settings_bg.models.tts.clone());
+                        let ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let out = AppPaths::outputs_dir().join(format!("tts_studio_{}.wav", ts));
+                        if let Some(p) = out.parent() {
+                            let _ = std::fs::create_dir_all(p);
+                        }
+                        let seg = synth
+                            .synthesize_text(&text, &voice, style.as_deref(), &out)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        if (speed - 1.0).abs() > 0.05 {
+                            let stretched =
+                                out.with_file_name(format!("tts_studio_{}_x{}.wav", ts, speed));
+                            let src = out.clone();
+                            let dst = stretched.clone();
+                            tokio::task::spawn_blocking(move || {
+                                FfmpegAligner::time_stretch(&src, &dst, speed as f64)
+                            })
+                            .await
+                            .map_err(|e| format!("stretch task: {}", e))?
+                            .map_err(|e| e.to_string())?;
+                            Ok((stretched, seg.duration_ms))
+                        } else {
+                            Ok((out, seg.duration_ms))
+                        }
+                    }
+                    .await;
+                    let _ = tx.send(res).await;
+                });
+
+                let view_done = tts_exec.clone();
+                let toast_done = toast_tts.clone();
+                glib::spawn_future_local(async move {
+                    if let Ok(res) = rx.recv().await {
+                        match res {
+                            Ok((path, dur)) => {
+                                view_done.set_generating(false, "Done");
+                                view_done.set_result(path, dur);
+                                toast_done.add_toast(libadwaita::Toast::new(
+                                    "Speech generated — press play to preview",
+                                ));
+                            }
+                            Err(e) => {
+                                view_done.set_generating(false, "Ready");
+                                view_done.set_status(&format!("Failed: {}", e));
+                                toast_done.add_toast(libadwaita::Toast::new(&format!(
+                                    "TTS failed: {}",
+                                    e
+                                )));
+                            }
+                        }
+                    }
+                });
+            });
+
+            // Play: ffplay -> pw-play -> xdg-open, loud toast if all fail.
+            let toast_play = toast_overlay.clone();
+            tts_view.connect_play_clicked(move |path| {
+                let arg = path.to_string_lossy().to_string();
+                let attempts: &[&[&str]] = &[
+                    &["ffplay", "-nodisp", "-autoexit", "-loglevel", "error"],
+                    &["pw-play"],
+                ];
+                for attempt in attempts {
+                    let mut cmd = std::process::Command::new(attempt[0]);
+                    for a in &attempt[1..] {
+                        cmd.arg(a);
+                    }
+                    match cmd.arg(&arg).spawn() {
+                        Ok(_) => return,
+                        Err(_) => continue,
+                    }
+                }
+                match std::process::Command::new("xdg-open").arg(&arg).spawn() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        toast_play.add_toast(libadwaita::Toast::new(&format!(
+                            "Cannot play audio (install ffplay): {}",
+                            e
+                        )));
+                    }
+                }
+            });
+
+            // Export: WAV preview -> MP3 in outputs dir.
+            let toast_exp = toast_overlay.clone();
+            tts_view.connect_export_clicked(move |path| {
+                let mp3 = path.with_extension("mp3");
+                let mp3_disp = mp3.display().to_string();
+                match std::process::Command::new("ffmpeg")
+                    .arg("-y")
+                    .arg("-i")
+                    .arg(&path)
+                    .arg("-c:a")
+                    .arg("libmp3lame")
+                    .arg("-b:a")
+                    .arg("192k")
+                    .arg(&mp3)
+                    .output()
+                {
+                    Ok(out) if out.status.success() => {
+                        toast_exp.add_toast(libadwaita::Toast::new(&format!(
+                            "Exported MP3: {}",
+                            mp3_disp
+                        )));
+                    }
+                    Ok(out) => {
+                        toast_exp.add_toast(libadwaita::Toast::new(&format!(
+                            "Export failed: {}",
+                            String::from_utf8_lossy(&out.stderr).trim()
+                        )));
+                    }
+                    Err(e) => {
+                        toast_exp
+                            .add_toast(libadwaita::Toast::new(&format!("Export failed: {}", e)));
+                    }
+                }
+            });
+        }
 
         Self { window }
     }

@@ -14,6 +14,7 @@ pub struct TtsStudioView {
     custom_style_entry: libadwaita::EntryRow,
     speed_combo: libadwaita::ComboRow,
     generate_btn: gtk4::Button,
+    play_btn: gtk4::Button,
     spinner: gtk4::Spinner,
     status_label: gtk4::Label,
     result_group: libadwaita::PreferencesGroup,
@@ -316,14 +317,8 @@ impl TtsStudioView {
             }
         });
 
-        // Connect play button
-        let path_play = current_audio_path.clone();
-        play_btn.connect_clicked(move |_| {
-            if let Some(ref path) = *path_play.borrow() {
-                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
-            }
-        });
-
+        // Connect play button (wired by window.rs via connect_play_clicked;
+        // no default handler here so a missing wiring is loud, not silent).
         Self {
             scroller,
             text_buffer,
@@ -332,6 +327,7 @@ impl TtsStudioView {
             custom_style_entry,
             speed_combo,
             generate_btn,
+            play_btn,
             spinner,
             status_label,
             result_group,
@@ -432,6 +428,15 @@ impl TtsStudioView {
 
     pub fn connect_generate_clicked<F: Fn() + 'static>(&self, callback: F) {
         self.generate_btn.connect_clicked(move |_| callback());
+    }
+
+    pub fn connect_play_clicked<F: Fn(PathBuf) + 'static>(&self, callback: F) {
+        let path_clone = self.current_audio_path.clone();
+        self.play_btn.connect_clicked(move |_| {
+            if let Some(ref path) = *path_clone.borrow() {
+                callback(path.clone());
+            }
+        });
     }
 
     pub fn connect_export_clicked<F: Fn(PathBuf) + 'static>(&self, callback: F) {

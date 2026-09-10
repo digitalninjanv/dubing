@@ -1,5 +1,5 @@
 Name:           audiodub
-Version:        0.4.10
+Version:        0.4.11
 Release:        1%{?dist}
 Summary:        AI-powered spoken audio translation and dubbing for Linux
 
