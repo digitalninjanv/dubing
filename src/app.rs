@@ -16,7 +16,9 @@ impl AudioDubApp {
     pub fn run() -> glib::ExitCode {
         init_logging();
         let _ = AppPaths::ensure_dirs();
+        let settings = AppSettings::load();
         CleanupManager::startup_reconciliation();
+        CleanupManager::retention_sweep(settings.job_retention_days);
 
         let app = libadwaita::Application::builder()
             .application_id(APP_ID)
@@ -27,7 +29,7 @@ impl AudioDubApp {
             let secret_store = Arc::new(StandardSecretStore::new());
             let audio_engine = Arc::new(FfmpegAudioEngine::new());
             let job_repo = Arc::new(FileJobRepository::new());
-            let settings = AppSettings::default();
+            let settings = settings.clone();
 
             let window = MainWindow::build(
                 application,

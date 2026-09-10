@@ -10,7 +10,7 @@ impl SettingsDialog {
     pub fn show(
         parent: &impl IsA<gtk4::Window>,
         secret_store: Arc<dyn SecretStore>,
-        _settings: AppSettings,
+        settings: AppSettings,
     ) {
         let window = libadwaita::PreferencesWindow::new();
         window.set_transient_for(Some(parent));
@@ -119,20 +119,58 @@ impl SettingsDialog {
         let bitrates =
             gtk4::StringList::new(&["128 kbps", "192 kbps (Recommended)", "256 kbps", "320 kbps"]);
         bitrate_row.set_model(Some(&bitrates));
-        bitrate_row.set_selected(1);
+        bitrate_row.set_selected(match settings.audio.default_bitrate_kbps {
+            128 => 0,
+            256 => 2,
+            320 => 3,
+            _ => 1,
+        });
         audio_group.add(&bitrate_row);
 
         let cleanup_row = libadwaita::SwitchRow::new();
         cleanup_row.set_title("Auto Cleanup Temporary Audio");
         cleanup_row.set_subtitle("Delete intermediate segment wav files after export");
-        cleanup_row.set_active(_settings.auto_cleanup);
+        cleanup_row.set_active(settings.auto_cleanup);
         audio_group.add(&cleanup_row);
 
         let debug_row = libadwaita::SwitchRow::new();
         debug_row.set_title("Debug Mode");
         debug_row.set_subtitle("Preserve intermediate segment audio and diagnostic logs");
-        debug_row.set_active(_settings.debug_mode);
+        debug_row.set_active(settings.debug_mode);
         audio_group.add(&debug_row);
+
+        // Persist audio preferences on change.
+        let persist = std::rc::Rc::new({
+            let bitrate_row = bitrate_row.clone();
+            let cleanup_row = cleanup_row.clone();
+            let debug_row = debug_row.clone();
+            move || {
+                let mut s = AppSettings::load();
+                s.audio.default_bitrate_kbps = match bitrate_row.selected() {
+                    0 => 128,
+                    2 => 256,
+                    3 => 320,
+                    _ => 192,
+                };
+                s.auto_cleanup = cleanup_row.is_active();
+                s.debug_mode = debug_row.is_active();
+                if let Err(e) = s.save() {
+                    tracing::warn!("Failed to persist settings: {}", e);
+                }
+            }
+        });
+        {
+            let persist = persist.clone();
+            bitrate_row.connect_selected_notify(move |_| persist());
+        }
+        {
+            let persist = persist.clone();
+            cleanup_row.connect_active_notify(move |_| persist());
+        }
+        {
+            let persist = persist.clone();
+            debug_row.connect_active_notify(move |_| persist());
+        }
 
         page.add(&audio_group);
 

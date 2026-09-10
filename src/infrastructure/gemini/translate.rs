@@ -279,13 +279,15 @@ impl TextTranslator for GeminiTranslator {
             }
         } else {
             // Bounded concurrency (3) to avoid burst 429s on large transcripts;
-            // preserves input order via indexed results (chunks are cloned to
-            // satisfy 'static bounds of the concurrent stream).
+            // preserves input order via indexed results. Chunks share one Arc
+            // instead of cloning every segment (R2).
             use futures::stream::{self, StreamExt};
-            let indexed: Vec<(usize, Vec<TranscriptSegment>)> = chunks
-                .iter()
+            use std::sync::Arc;
+            let indexed: Vec<(usize, Arc<[TranscriptSegment]>)> = transcript
+                .segments
+                .chunks(CHUNK_SIZE)
                 .enumerate()
-                .map(|(i, c)| (i, c.to_vec()))
+                .map(|(i, c)| (i, Arc::from(c)))
                 .collect();
             let mut stream = stream::iter(indexed)
                 .map(|(i, chunk)| {

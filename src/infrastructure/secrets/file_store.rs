@@ -19,6 +19,13 @@ impl StandardSecretStore {
         let fallback_path = AppPaths::config_dir().join(CREDENTIALS_FILE);
         Self { fallback_path }
     }
+
+    /// Constructor with explicit path (used by tests to avoid touching home).
+    pub fn with_path(path: PathBuf) -> Self {
+        Self {
+            fallback_path: path,
+        }
+    }
 }
 
 impl Default for StandardSecretStore {

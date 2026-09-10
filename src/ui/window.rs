@@ -6,9 +6,7 @@ use crate::application::pipeline::ReviewRequest;
 use crate::application::ports::{AudioEngine, JobRepository, SecretStore, SpeechSynthesizer};
 use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
-use crate::domain::{
-    AudioArtifact, DomainError, DubbingEngine, Job, JobProgress, LanguageRegistry,
-};
+use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
 use crate::infrastructure::ffmpeg::FfmpegAligner;
 use crate::infrastructure::filesystem::AppPaths;
 use crate::infrastructure::gemini::{
@@ -319,7 +317,6 @@ impl MainWindow {
             let tgt_lang = dropzone_exec.selected_target_language();
             let tone = dropzone_exec.selected_tone();
             let voice_config = dropzone_exec.selected_voice_config();
-            let engine = DubbingEngine::Studio;
             let duck_audio = dropzone_exec.is_ducking_enabled();
             let review_transcript = dropzone_exec.is_review_enabled();
 
@@ -344,7 +341,6 @@ impl MainWindow {
                 tone,
                 voice_config,
                 export_subtitles: true,
-                engine,
                 duck_audio,
                 review_transcript,
                 review_channel: if review_transcript {

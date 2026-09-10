@@ -4,8 +4,8 @@ use super::ports::{
 use crate::config::{AppSettings, AudioConfig};
 use crate::domain::{
     generate_bilingual_txt, generate_srt, generate_vtt, AudioArtifact, AudioFormat, DomainError,
-    DubbingEngine, Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment,
-    Transcript, TranslatedDocument, TranslationTone, VoiceProfile,
+    Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment, Transcript,
+    TranslatedDocument, TranslationTone, VoiceProfile,
 };
 use crate::infrastructure::filesystem::{AppPaths, CleanupManager};
 use futures::stream::{self, StreamExt};
@@ -49,7 +49,6 @@ pub struct PipelineOptions {
     pub tone: TranslationTone,
     pub voice_config: Option<SpeakerVoiceConfig>,
     pub export_subtitles: bool,
-    pub engine: DubbingEngine,
     pub duck_audio: bool,
     pub review_transcript: bool,
     pub review_channel: Option<async_channel::Sender<ReviewRequest>>,

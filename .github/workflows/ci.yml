@@ -1,4 +1,4 @@
-name: Linux Live Dubber CI
+name: CI
 
 on:
   push:
@@ -20,12 +20,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev libadwaita-1-dev libsecret-1-dev ffmpeg \
-            pipewire pipewire-pulse wireplumber
+            libgtk-4-dev libadwaita-1-dev ffmpeg
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Format check
         run: cargo fmt --all -- --check
+      - name: Lints (zero warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --all-targets --all-features
       - name: Release build

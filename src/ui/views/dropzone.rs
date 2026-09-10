@@ -244,10 +244,6 @@ impl DropzoneView {
         self.selected_path.borrow().clone()
     }
 
-    pub fn selected_engine(&self) -> crate::domain::DubbingEngine {
-        crate::domain::DubbingEngine::Studio
-    }
-
     pub fn selected_source_language(&self) -> LanguageId {
         let idx = self.source_combo.selected() as usize;
         self.source_ids

@@ -3,8 +3,8 @@ use audiodub::application::ports::{AudioEngine, SecretStore, SpeechSynthesizer};
 use audiodub::application::{PipelineOptions, PipelineOrchestrator};
 use audiodub::config::AppSettings;
 use audiodub::domain::{
-    BatchItemStatus, BatchJob, DubbingEngine, LanguageId, LanguageRegistry, SpeakerVoiceConfig,
-    TranslationTone, VoiceProfile,
+    BatchItemStatus, BatchJob, LanguageId, LanguageRegistry, SpeakerVoiceConfig, TranslationTone,
+    VoiceProfile,
 };
 use audiodub::infrastructure::ffmpeg::FfmpegAudioEngine;
 use audiodub::infrastructure::filesystem::FileJobRepository;
@@ -106,7 +106,6 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let mut voice_1: Option<String> = None;
     let mut voice_2: Option<String> = None;
     let mut output_path_opt: Option<PathBuf> = None;
-    let engine = DubbingEngine::Studio;
     let mut duck_audio = false;
 
     let mut i = 1;
@@ -170,7 +169,7 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let job = audiodub::domain::Job::new(doc, source_id, target_id);
     let job_repo = Arc::new(FileJobRepository::new());
 
-    let settings = AppSettings::default();
+    let settings = AppSettings::load();
     let cancel_token = CancellationToken::new();
     let client = GeminiClient::new(api_key).with_cancel_token(cancel_token.clone());
     let transcriber = Arc::new(GeminiTranscriber::new(
@@ -202,17 +201,15 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         tone,
         voice_config,
         export_subtitles: true,
-        engine,
         duck_audio,
         review_transcript: false,
         review_channel: None,
     };
 
     println!(
-        "Starting media translation: {} -> {} (Engine: {}, Tone: {})",
+        "Starting media translation: {} -> {} (Tone: {})",
         source_lang_str,
         target_lang_str,
-        engine.as_str(),
         tone.as_str()
     );
 
@@ -316,7 +313,7 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
 
     let audio_engine = Arc::new(FfmpegAudioEngine::new());
     let job_repo = Arc::new(FileJobRepository::new());
-    let settings = AppSettings::default();
+    let settings = AppSettings::load();
 
     let voice_config = if voice_1.is_some() || voice_2.is_some() {
         Some(SpeakerVoiceConfig::new(voice_1, voice_2))
@@ -373,7 +370,6 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
             tone,
             voice_config: voice_config.clone(),
             export_subtitles: true,
-            engine: DubbingEngine::default(),
             duck_audio: false,
             review_transcript: false,
             review_channel: None,
@@ -485,7 +481,7 @@ async fn run_tts_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     println!("  Speed:  {:.2}x", speed);
     println!("  Output: {}", output_path.display());
 
-    let settings = AppSettings::default();
+    let settings = AppSettings::load();
     let client = GeminiClient::new(api_key);
     let synthesizer = GeminiSynthesizer::new(client, settings.models.tts.clone());
 

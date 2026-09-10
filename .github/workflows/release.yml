@@ -24,17 +24,21 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libgtk-4-dev \
             libadwaita-1-dev \
-            ffmpeg \
-            libsecret-1-dev \
-            pipewire \
-            pipewire-pulse \
-            wireplumber
+            ffmpeg
 
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
       - name: Cache cargo registry & target
         uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Lints (zero warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run verification test suite
         run: cargo test --all-targets --all-features

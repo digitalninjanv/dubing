@@ -53,4 +53,40 @@ impl CleanupManager {
             }
         }
     }
+
+    /// Deletes terminal job dirs older than `retention_days` (0 = keep all).
+    /// Only touches jobs in a terminal stage; running/retryable jobs are kept.
+    pub fn retention_sweep(retention_days: u64) {
+        Self::retention_sweep_in(&AppPaths::jobs_dir(), retention_days);
+    }
+
+    pub fn retention_sweep_in(jobs_dir: &std::path::Path, retention_days: u64) {
+        if retention_days == 0 {
+            return;
+        }
+        if !jobs_dir.exists() {
+            return;
+        }
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
+        let Ok(entries) = fs::read_dir(jobs_dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let manifest = path.join("job.json");
+            let Ok(content) = fs::read_to_string(&manifest) else {
+                continue;
+            };
+            let Ok(job) = serde_json::from_str::<crate::domain::Job>(&content) else {
+                continue;
+            };
+            if job.stage.is_terminal() && job.updated_at < cutoff {
+                tracing::info!("Removing retained job dir {}", path.display());
+                let _ = fs::remove_dir_all(&path);
+            }
+        }
+    }
 }

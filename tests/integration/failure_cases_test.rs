@@ -489,3 +489,78 @@ async fn test_gemini_client_test_connection() {
 
     assert_eq!(err, audiodub::domain::DomainError::AuthenticationFailed);
 }
+
+#[tokio::test]
+async fn test_api_key_header_only_no_query_key() {
+    use wiremock::matchers::header;
+
+    let server = MockServer::start().await;
+
+    // Accepts only when the key arrives via header; query string is ignored.
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(header("x-goog-api-key", "header-key-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "models": [{ "name": "models/gemini-3.1-flash-lite" }]
+        })))
+        .mount(&server)
+        .await;
+
+    let client = GeminiClient::new("header-key-123").with_base_url(server.uri());
+    let models = client
+        .test_connection()
+        .await
+        .expect("header-authed request should succeed");
+    assert_eq!(models, vec!["gemini-3.1-flash-lite".to_string()]);
+
+    // The recorded request must not carry the key in the URL query string.
+    let received = server.received_requests().await.unwrap();
+    assert_eq!(received.len(), 1);
+    assert!(
+        !received[0].url.query().unwrap_or("").contains("key="),
+        "API key must not appear in URL query: {}",
+        received[0].url
+    );
+}
+
+#[tokio::test]
+async fn test_retry_sleep_aborts_immediately_on_cancel() {
+    use tokio_util::sync::CancellationToken;
+
+    let server = MockServer::start().await;
+
+    // Always 500 so the client would sleep 3s+ before retrying.
+    Mock::given(method("POST"))
+        .and(path("/test_cancel"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let token = CancellationToken::new();
+    let client = GeminiClient::new("k")
+        .with_base_url(server.uri())
+        .with_backoffs(vec![30])
+        .with_cancel_token(token.clone());
+
+    let http_client = client.http().clone();
+    let url = format!("{}/test_cancel", server.uri());
+
+    let handle = tokio::spawn(async move {
+        client
+            .post_with_retry("Test Cancel", || {
+                let cli = http_client.clone();
+                let u = url.clone();
+                async move { cli.post(&u).send().await }
+            })
+            .await
+    });
+
+    // Cancel almost immediately; must resolve as Cancelled, not after 30s.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    token.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+        .await
+        .expect("cancel must resolve promptly");
+    let err = result.expect("task join").expect_err("must be Cancelled");
+    assert_eq!(err, audiodub::domain::DomainError::Cancelled);
+}

@@ -17,7 +17,7 @@ Aplikasi ini menggabungkan kecerdasan multimodal Google Gemini terbaru (`gemini-
 ## 📑 Daftar Isi
 
 - [🚀 Instalasi Cepat 1 Baris (Universal Linux)](#-instalasi-cepat-1-baris-universal-linux)
-- [✨ Fitur Unggulan (v0.4.0)](#-fitur-unggulan-v040)
+- [✨ Fitur Unggulan](#-fitur-unggulan)
 - [🏛️ Arsitektur Heksagonal & Alur Kerja](#️-arsitektur-heksagonal--alur-kerja)
 - [🤖 Matriks Model Google Gemini](#-matriks-model-google-gemini)
 - [💻 Panduan Penggunaan](#-panduan-penggunaan)
@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 
 > **Untuk menginstal versi spesifik:**
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --version v0.3.12
+> curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.sh | bash -s -- --version v0.5.1
 > ```
 
 > **Untuk uninstall bersih kapan saja:**
@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/digitalninjanv/dubing/main/install.
 
 ---
 
-## ✨ Fitur Unggulan (v0.4.0)
+## ✨ Fitur Unggulan
 
 ### 🎙️ 1. Studio Multimodal Audio & Video Dubbing
 - **Dukungan Format Luas:** Menerima input audio (`MP3, WAV, M4A, AAC, OGG, FLAC, WebM, Opus`) dan kontainer video (`MP4, MKV, MOV, WebM`) hingga ukuran **4 GB**.

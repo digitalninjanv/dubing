@@ -323,13 +323,14 @@ fn test_tts_style_preset_and_request() {
 }
 
 #[test]
-fn test_dubbing_engine_variants_and_display() {
-    use audiodub::domain::DubbingEngine;
+fn test_pipeline_options_default() {
+    use audiodub::application::PipelineOptions;
+    use audiodub::domain::TranslationTone;
 
-    let studio = DubbingEngine::Studio;
-    assert_eq!(studio.as_str(), "studio");
-    assert_eq!(DubbingEngine::default(), DubbingEngine::Studio);
-    assert!(format!("{}", studio).contains("Studio"));
+    let opts = PipelineOptions::default();
+    assert!(matches!(opts.tone, TranslationTone::Neutral));
+    assert!(!opts.duck_audio);
+    assert!(!opts.review_transcript);
 }
 
 #[test]
@@ -351,4 +352,101 @@ fn test_speaker_voice_config_resolution() {
     assert_eq!(config.get_voice_for(Some("Speaker 1")), Some("Puck"));
     assert_eq!(config.get_voice_for(Some("Speaker 2")), Some("Aoede"));
     assert_eq!(config.get_voice_for(None), Some("Puck"));
+}
+
+#[test]
+fn test_settings_toml_roundtrip_with_defaults() {
+    use audiodub::config::AppSettings;
+
+    // Defaults serialize and parse back identically (missing keys tolerated).
+    let original = AppSettings::default();
+    let text = toml::to_string_pretty(&original).expect("serialize settings");
+    let parsed: AppSettings = toml::from_str(&text).expect("parse settings");
+    assert_eq!(parsed.audio.default_bitrate_kbps, 192);
+    assert!(parsed.auto_cleanup);
+    assert_eq!(parsed.job_retention_days, 30);
+
+    // Sparse/old files still load via serde defaults.
+    let sparse: AppSettings =
+        toml::from_str("[audio]\ndefault_bitrate_kbps = 320").expect("sparse");
+    assert_eq!(sparse.audio.default_bitrate_kbps, 320);
+    assert!(sparse.auto_cleanup);
+}
+
+#[test]
+fn test_retention_sweep_keeps_recent_removes_old_terminal() {
+    use audiodub::domain::{AudioDocument, AudioFormat, MediaMetadata};
+    use audiodub::domain::{Job, JobProgress, LanguageId, PipelineStage};
+    use audiodub::infrastructure::filesystem::CleanupManager;
+    use std::path::PathBuf;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mk_job = |id: &str, stage: PipelineStage, days_old: i64| {
+        let job_dir = dir.path().join(id);
+        std::fs::create_dir_all(&job_dir).unwrap();
+        let mut job = Job::new(
+            AudioDocument {
+                id: "doc".to_string(),
+                path: PathBuf::from("/tmp/x.mp3"),
+                format: AudioFormat::Mp3,
+                mime_type: "audio/mpeg".to_string(),
+                size_bytes: 10,
+                metadata: MediaMetadata {
+                    duration_ms: 1000,
+                    sample_rate: 44100,
+                    channels: 2,
+                    codec: "mp3".to_string(),
+                    bitrate: None,
+                },
+            },
+            LanguageId::new("id"),
+            LanguageId::new("en"),
+        );
+        job.stage = stage;
+        job.progress = JobProgress {
+            current_stage: stage,
+            ..Default::default()
+        };
+        job.updated_at = chrono::Utc::now() - chrono::Duration::days(days_old);
+        std::fs::write(
+            job_dir.join("job.json"),
+            serde_json::to_string_pretty(&job).unwrap(),
+        )
+        .unwrap();
+    };
+
+    mk_job("old_done", PipelineStage::Completed, 40);
+    mk_job("recent_done", PipelineStage::Completed, 2);
+    mk_job("old_running", PipelineStage::Transcribing, 40);
+
+    CleanupManager::retention_sweep_in(dir.path(), 30);
+
+    assert!(
+        !dir.path().join("old_done").exists(),
+        "old terminal removed"
+    );
+    assert!(dir.path().join("recent_done").exists(), "recent kept");
+    assert!(
+        dir.path().join("old_running").exists(),
+        "non-terminal kept regardless of age"
+    );
+}
+
+#[test]
+fn test_file_store_roundtrip_atomic() {
+    use audiodub::application::ports::SecretStore;
+    use audiodub::infrastructure::secrets::StandardSecretStore;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = StandardSecretStore::with_path(dir.path().join("credentials"));
+    assert_eq!(store.get_api_key().unwrap(), None);
+    store.set_api_key("  secret-abc-123  ").unwrap();
+    assert_eq!(
+        store.get_api_key().unwrap(),
+        Some("secret-abc-123".to_string())
+    );
+    // No torn tmp file left behind.
+    assert!(!dir.path().join("credentials.tmp").exists());
+    store.delete_api_key().unwrap();
+    assert_eq!(store.get_api_key().unwrap(), None);
 }
