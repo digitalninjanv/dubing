@@ -687,8 +687,6 @@ impl PipelineOrchestrator {
             )
             .await?;
 
-        artifact_store.register("output/audio", &artifact.path, &mut artifact_manifest)?;
-        artifact_store.save(&artifact_manifest)?;
         let t_export = t_export_start.elapsed();
 
         // Generate Subtitle artifacts (.srt, .vtt, bilingual .txt)
@@ -716,21 +714,14 @@ impl PipelineOrchestrator {
         ));
 
         if let Ok(()) = std::fs::write(&srt_path, generate_srt(&translated)) {
-            artifact.subtitle_srt_path = Some(srt_path.clone());
-            let _ =
-                artifact_store.register("output/subtitles.srt", &srt_path, &mut artifact_manifest);
+            artifact.subtitle_srt_path = Some(srt_path);
         }
         if let Ok(()) = std::fs::write(&vtt_path, generate_vtt(&translated)) {
-            artifact.subtitle_vtt_path = Some(vtt_path.clone());
-            let _ =
-                artifact_store.register("output/subtitles.vtt", &vtt_path, &mut artifact_manifest);
+            artifact.subtitle_vtt_path = Some(vtt_path);
         }
         if let Ok(()) = std::fs::write(&txt_path, generate_bilingual_txt(&translated)) {
-            artifact.transcript_txt_path = Some(txt_path.clone());
-            let _ =
-                artifact_store.register("output/bilingual.txt", &txt_path, &mut artifact_manifest);
+            artifact.transcript_txt_path = Some(txt_path);
         }
-        artifact_store.save(&artifact_manifest)?;
 
         // Audio Ducking (Smooth BGM attenuation)
         let mut audio_for_packaging = artifact.path.clone();
