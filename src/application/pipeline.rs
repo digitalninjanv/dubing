@@ -518,7 +518,7 @@ impl PipelineOrchestrator {
                 let tts_key = format!("synthesis/{idx:04}");
                 let has_manifest_record =
                     synthesis_manifest_for_task.artifacts.contains_key(&tts_key);
-                let cached_path = artifact_store_for_tasks
+                let cached_path = artifact_store_for_task
                     .verify(&tts_key, &synthesis_manifest_for_task)
                     .ok()
                     .flatten();
