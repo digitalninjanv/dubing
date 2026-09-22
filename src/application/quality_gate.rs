@@ -97,7 +97,8 @@ impl QualityGate {
                 )));
             }
 
-            if segment.source_text.trim().is_empty() || segment.source_text.trim() != source_text.trim()
+            if segment.source_text.trim().is_empty()
+                || segment.source_text.trim() != source_text.trim()
             {
                 return Err(Self::fail(format!(
                     "Translation source text mismatch for segment '{}'",
@@ -114,7 +115,9 @@ impl QualityGate {
         }
 
         if seen.len() != expected.len() {
-            return Err(Self::fail("Translation is missing one or more transcript segments"));
+            return Err(Self::fail(
+                "Translation is missing one or more transcript segments",
+            ));
         }
 
         Ok(())
