@@ -6,3 +6,5 @@ pub mod paths;
 pub use cleanup::CleanupManager;
 pub use job_repository::FileJobRepository;
 pub use paths::AppPaths;
+
+pub use artifacts::{ArtifactManifest, ArtifactStore};
