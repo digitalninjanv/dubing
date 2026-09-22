@@ -394,7 +394,10 @@ impl GeminiSynthesizer {
     ) -> Result<SynthesizedSegment, DomainError> {
         let tmp_path = output_path.with_extension("wav.tmp");
         let mut file = File::create(&tmp_path).map_err(|e| {
-            DomainError::Internal(format!("Failed to create temporary segment audio file: {}", e))
+            DomainError::Internal(format!(
+                "Failed to create temporary segment audio file: {}",
+                e
+            ))
         })?;
 
         file.write_all(&output_bytes).map_err(|e| {
