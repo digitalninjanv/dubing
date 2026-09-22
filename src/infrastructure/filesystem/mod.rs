@@ -1,3 +1,4 @@
+pub mod artifacts;
 pub mod cleanup;
 pub mod job_repository;
 pub mod paths;
