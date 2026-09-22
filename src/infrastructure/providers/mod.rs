@@ -10,6 +10,8 @@ use crate::infrastructure::gemini::{
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+pub type ProviderStatusCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
 pub struct PipelineProviders {
     pub transcriber: Arc<dyn SpeechTranscriber>,
     pub translator: Arc<dyn TextTranslator>,
@@ -33,7 +35,7 @@ impl ProviderRegistry {
         settings: &AppSettings,
         api_key: impl Into<String>,
         cancel_token: Option<CancellationToken>,
-        status_callback: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+        status_callback: Option<ProviderStatusCallback>,
     ) -> Result<PipelineProviders, DomainError> {
         self.validate_provider(&settings.providers.transcriber)?;
         self.validate_provider(&settings.providers.translator)?;
