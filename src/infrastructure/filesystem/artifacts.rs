@@ -2,6 +2,8 @@ use crate::domain::DomainError;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 pub const ARTIFACT_MANIFEST_SCHEMA_VERSION: u32 = 1;
@@ -178,16 +180,32 @@ impl ArtifactStore {
 }
 
 fn sha256_file(path: &Path) -> Result<String, DomainError> {
-    let bytes = std::fs::read(path).map_err(|e| {
+    let file = File::open(path).map_err(|e| {
         DomainError::Internal(format!(
-            "Failed to read artifact '{}' for hashing: {}",
+            "Failed to open artifact '{}' for hashing: {}",
             path.display(),
             e
         ))
     })?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 1024 * 1024];
 
-    let digest = Sha256::digest(bytes);
-    Ok(format!("{:x}", digest))
+    loop {
+        let read = reader.read(&mut buffer).map_err(|e| {
+            DomainError::Internal(format!(
+                "Failed to read artifact '{}' for hashing: {}",
+                path.display(),
+                e
+            ))
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<(), DomainError> {
