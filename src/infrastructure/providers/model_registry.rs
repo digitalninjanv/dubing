@@ -123,8 +123,7 @@ impl ModelRegistry {
     }
 
     pub fn get(&self, provider: &str, model: &str) -> Option<&ModelSpec> {
-        self.models
-            .get(&(provider.to_string(), model.to_string()))
+        self.models.get(&(provider.to_string(), model.to_string()))
     }
 
     /// Known models are capability-checked. Unknown model IDs are allowed so
