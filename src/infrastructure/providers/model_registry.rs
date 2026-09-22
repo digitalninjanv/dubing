@@ -106,7 +106,7 @@ impl ModelRegistry {
         registry.register(ModelSpec {
             provider: "gemini".to_string(),
             id: "gemini-3.5-flash".to_string(),
-            capabilities: ModelCapabilities::translation(),
+            capabilities: ModelCapabilities::general_text_audio(),
         });
         registry.register(ModelSpec {
             provider: "gemini".to_string(),
