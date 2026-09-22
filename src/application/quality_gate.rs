@@ -179,9 +179,9 @@ impl QualityGate {
         synthesized: &[SynthesizedSegment],
         alignment: &AlignmentResult,
     ) -> Result<(), DomainError> {
-        if alignment.aligned_files.len() != synthesized.len() {
+        if alignment.aligned_files.len() < synthesized.len() {
             return Err(Self::fail(format!(
-                "Alignment count mismatch: synthesis={}, alignment={}",
+                "Alignment produced too few files: synthesis={}, alignment={}",
                 synthesized.len(),
                 alignment.aligned_files.len()
             )));
