@@ -212,3 +212,14 @@ impl AudioEngine for FfmpegAudioEngine {
             .await
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::FfmpegAudioEngine;
+
+    #[test]
+    fn zero_concurrency_is_clamped_to_one() {
+        let _engine = FfmpegAudioEngine::with_concurrency(0);
+    }
+}
