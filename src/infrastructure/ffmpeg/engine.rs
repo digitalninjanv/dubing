@@ -30,7 +30,7 @@ impl FfmpegAudioEngine {
 
     async fn run_blocking<F, T>(&self, operation: F) -> Result<T, DomainError>
     where
-        F: FnOnce() -> T + Send + 'static,
+        F: FnOnce() -> Result<T, DomainError> + Send + 'static,
         T: Send + 'static,
     {
         let permit = self
@@ -58,8 +58,7 @@ impl Default for FfmpegAudioEngine {
 impl AudioEngine for FfmpegAudioEngine {
     async fn probe(&self, path: &Path) -> Result<MediaMetadata, DomainError> {
         let p = path.to_path_buf();
-        self.run_blocking(move || FfprobeInspector::probe(&p))
-            .await?
+        self.run_blocking(move || FfprobeInspector::probe(&p)).await
     }
 
     async fn inspect_and_validate(
