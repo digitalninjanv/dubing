@@ -2,6 +2,7 @@ use super::ports::{
     AudioEngine, JobRepository, SpeechSynthesizer, SpeechTranscriber, TextTranslator,
 };
 use crate::config::{AppSettings, AudioConfig};
+use crate::application::quality_gate::QualityGate;
 use crate::domain::{
     generate_bilingual_txt, generate_srt, generate_vtt, AudioArtifact, AudioFormat, DomainError,
     Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment, Transcript,
@@ -312,6 +313,7 @@ impl PipelineOrchestrator {
             serde_json::from_str(&content)
                 .map_err(|e| DomainError::Internal(format!("Failed to parse transcript: {}", e)))?
         };
+        QualityGate::validate_transcript(&transcript)?;
         let t_transcribe = t_transcribe_start.elapsed();
 
         if let Err(e) = check_cancellation(&mut job) {
@@ -374,6 +376,8 @@ impl PipelineOrchestrator {
         };
         let t_translate = t_translate_start.elapsed();
 
+        QualityGate::validate_translation(&transcript, &translated)?;
+
         // Interactive Review Checkpoint (Human-in-the-Loop)
         if options.review_transcript {
             if let Some(ref ch) = options.review_channel {
@@ -389,11 +393,17 @@ impl PipelineOrchestrator {
                             translated = edited_doc;
                             // Save updated translation to disk (atomic)
                             let translated_path = job_dir.join("translated.json");
-                            if let Ok(data) = serde_json::to_string_pretty(&translated) {
-                                if let Err(e) = write_manifest_atomic(&translated_path, &data) {
-                                    tracing::warn!("Failed to persist reviewed translation: {}", e);
-                                }
-                            }
+                            QualityGate::validate_translation(&transcript, &translated)?;
+                            let data = serde_json::to_string_pretty(&translated).map_err(|e| {
+                                DomainError::Internal(format!("Serialize reviewed translation: {}", e))
+                            })?;
+                            write_manifest_atomic(&translated_path, &data)?;
+                            artifact_store.register(
+                                "translation",
+                                &translated_path,
+                                &mut artifact_manifest,
+                            )?;
+                            artifact_store.save(&artifact_manifest)?;
                         }
                         Ok(None) => {
                             tracing::info!(
@@ -413,6 +423,8 @@ impl PipelineOrchestrator {
                 }
             }
         }
+
+        QualityGate::validate_translation(&transcript, &translated)?;
 
         if let Err(e) = check_cancellation(&mut job) {
             self.job_repo.save(&job).await?;
@@ -627,6 +639,7 @@ impl PipelineOrchestrator {
         collected.sort_by_key(|(idx, _)| *idx);
         let synthesized_segments: Vec<SynthesizedSegment> =
             collected.into_iter().map(|(_, seg)| seg).collect();
+        QualityGate::validate_synthesis(&translated, &synthesized_segments)?;
         let t_synthesis = t_synthesis_start.elapsed();
 
         if let Err(e) = check_cancellation(&mut job) {
@@ -661,6 +674,7 @@ impl PipelineOrchestrator {
             artifact_store.register(format!("alignment/{idx:04}"), path, &mut artifact_manifest)?;
         }
         artifact_store.save(&artifact_manifest)?;
+        QualityGate::validate_alignment(&synthesized_segments, &alignment_res)?;
         let t_align = t_align_start.elapsed();
 
         // 6. Exporting Stage
@@ -802,15 +816,12 @@ impl PipelineOrchestrator {
         self.job_repo.save(&job).await?;
         on_progress(&job);
 
-        if artifact.duration_ms == 0 || artifact.size_bytes == 0 {
-            let err = DomainError::ExportError(
-                "Final output validation failed: 0 duration or size".to_string(),
-            );
+        QualityGate::validate_output(&artifact).map_err(|err| {
             job.fail(false, err.to_string());
-            self.job_repo.save(&job).await?;
-            on_progress(&job);
-            return Err(err);
-        }
+            err
+        })?;
+        self.job_repo.save(&job).await?;
+        on_progress(&job);
 
         // 8. Completed Stage
         update_stage(
