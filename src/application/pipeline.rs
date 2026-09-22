@@ -76,6 +76,8 @@ pub struct PipelineOrchestrator {
     audio_config: AudioConfig,
     auto_cleanup: bool,
     debug_mode: bool,
+    tts_concurrency: usize,
+    tts_request_spacing_ms: u64,
 }
 
 impl PipelineOrchestrator {
@@ -96,6 +98,8 @@ impl PipelineOrchestrator {
             audio_config,
             auto_cleanup: true,
             debug_mode: false,
+            tts_concurrency: 2,
+            tts_request_spacing_ms: 120,
         }
     }
 
@@ -107,6 +111,7 @@ impl PipelineOrchestrator {
         job_repo: Arc<dyn JobRepository>,
         settings: &AppSettings,
     ) -> Self {
+        let runtime = settings.runtime.clone().normalized();
         Self {
             transcriber,
             translator,
@@ -116,6 +121,8 @@ impl PipelineOrchestrator {
             audio_config: settings.audio.clone(),
             auto_cleanup: settings.auto_cleanup,
             debug_mode: settings.debug_mode,
+            tts_concurrency: runtime.tts_concurrency,
+            tts_request_spacing_ms: runtime.tts_request_spacing_ms,
         }
     }
 
@@ -553,8 +560,11 @@ impl PipelineOrchestrator {
                 // Request pacing: token-bucket style — uniform small delay per
                 // segment avoids burst 429s without the odd 0/350/0/350 pattern
                 // that added ~10s dead time on 60 segments (F2).
-                if idx > 0 {
-                    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                if idx > 0 && self.tts_request_spacing_ms > 0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        self.tts_request_spacing_ms,
+                    ))
+                    .await;
                 }
 
                 let synth_result = synth
@@ -565,9 +575,8 @@ impl PipelineOrchestrator {
             });
         }
 
-        // Controlled concurrency = 2 as per PRD Section 23 to remain well within Free Tier RPM and prevent 429 burst errors
-        const TTS_CONCURRENCY: usize = 2;
-        let mut stream = stream::iter(tasks).buffer_unordered(TTS_CONCURRENCY);
+        // Controlled concurrency keeps API pressure and local memory usage bounded.
+        let mut stream = stream::iter(tasks).buffer_unordered(self.tts_concurrency);
         let mut collected: Vec<(usize, SynthesizedSegment)> =
             Vec::with_capacity(translated.segments.len());
 
