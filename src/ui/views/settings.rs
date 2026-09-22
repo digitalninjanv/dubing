@@ -16,7 +16,7 @@ impl SettingsDialog {
         window.set_transient_for(Some(parent));
         window.set_title(Some("Settings — AudioDub AI"));
         window.set_modal(true);
-        window.set_default_size(600, 480);
+        window.set_default_size(600, 680);
 
         let page = libadwaita::PreferencesPage::new();
         page.set_title("General");
@@ -174,7 +174,103 @@ impl SettingsDialog {
 
         page.add(&audio_group);
 
-        // 3. Privacy & Compliance Group (PRD SEC-005)
+        // 3. Runtime Resource Controls
+        let runtime_group = libadwaita::PreferencesGroup::new();
+        runtime_group.set_title("Performance & API Limits");
+        runtime_group.set_description(Some(
+            "Control parallel AI requests and FFmpeg work to balance speed, RAM usage, CPU load, and API rate limits.",
+        ));
+
+        let tts_concurrency = gtk4::SpinButton::with_range(1.0, 8.0, 1.0);
+        tts_concurrency.set_value(settings.runtime.tts_concurrency as f64);
+        let tts_row = libadwaita::ActionRow::new();
+        tts_row.set_title("TTS Parallel Requests");
+        tts_row.set_subtitle("Maximum simultaneous voice-generation requests");
+        tts_row.add_suffix(&tts_concurrency);
+        tts_row.set_activatable_widget(Some(&tts_concurrency));
+        runtime_group.add(&tts_row);
+
+        let spacing = gtk4::SpinButton::with_range(0.0, 5000.0, 10.0);
+        spacing.set_value(settings.runtime.tts_request_spacing_ms as f64);
+        let spacing_row = libadwaita::ActionRow::new();
+        spacing_row.set_title("TTS Request Spacing");
+        spacing_row.set_subtitle("Delay between queued synthesis requests, in milliseconds");
+        spacing_row.add_suffix(&spacing);
+        spacing_row.set_activatable_widget(Some(&spacing));
+        runtime_group.add(&spacing_row);
+
+        let translation_concurrency =
+            gtk4::SpinButton::with_range(1.0, 8.0, 1.0);
+        translation_concurrency.set_value(settings.runtime.translation_concurrency as f64);
+        let translation_row = libadwaita::ActionRow::new();
+        translation_row.set_title("Translation Parallel Requests");
+        translation_row.set_subtitle("Maximum simultaneous translation batches");
+        translation_row.add_suffix(&translation_concurrency);
+        translation_row.set_activatable_widget(Some(&translation_concurrency));
+        runtime_group.add(&translation_row);
+
+        let batch_size = gtk4::SpinButton::with_range(1.0, 50.0, 1.0);
+        batch_size.set_value(settings.runtime.translation_batch_size as f64);
+        let batch_row = libadwaita::ActionRow::new();
+        batch_row.set_title("Translation Batch Size");
+        batch_row.set_subtitle("Transcript segments sent in one translation request");
+        batch_row.add_suffix(&batch_size);
+        batch_row.set_activatable_widget(Some(&batch_size));
+        runtime_group.add(&batch_row);
+
+        let ffmpeg_concurrency = gtk4::SpinButton::with_range(1.0, 4.0, 1.0);
+        ffmpeg_concurrency.set_value(settings.runtime.ffmpeg_concurrency as f64);
+        let ffmpeg_row = libadwaita::ActionRow::new();
+        ffmpeg_row.set_title("FFmpeg Parallel Jobs");
+        ffmpeg_row.set_subtitle("Maximum simultaneous blocking media operations");
+        ffmpeg_row.add_suffix(&ffmpeg_concurrency);
+        ffmpeg_row.set_activatable_widget(Some(&ffmpeg_concurrency));
+        runtime_group.add(&ffmpeg_row);
+
+        let persist_runtime = std::rc::Rc::new({
+            let tts_concurrency = tts_concurrency.clone();
+            let spacing = spacing.clone();
+            let translation_concurrency = translation_concurrency.clone();
+            let batch_size = batch_size.clone();
+            let ffmpeg_concurrency = ffmpeg_concurrency.clone();
+            move || {
+                let mut s = AppSettings::load();
+                s.runtime.tts_concurrency = tts_concurrency.value_as_int().max(1) as usize;
+                s.runtime.tts_request_spacing_ms = spacing.value_as_int().max(0) as u64;
+                s.runtime.translation_concurrency =
+                    translation_concurrency.value_as_int().max(1) as usize;
+                s.runtime.translation_batch_size = batch_size.value_as_int().max(1) as usize;
+                s.runtime.ffmpeg_concurrency = ffmpeg_concurrency.value_as_int().max(1) as usize;
+                if let Err(e) = s.save() {
+                    tracing::warn!("Failed to persist runtime settings: {}", e);
+                }
+            }
+        });
+
+        {
+            let persist = persist_runtime.clone();
+            tts_concurrency.connect_value_changed(move |_| persist());
+        }
+        {
+            let persist = persist_runtime.clone();
+            spacing.connect_value_changed(move |_| persist());
+        }
+        {
+            let persist = persist_runtime.clone();
+            translation_concurrency.connect_value_changed(move |_| persist());
+        }
+        {
+            let persist = persist_runtime.clone();
+            batch_size.connect_value_changed(move |_| persist());
+        }
+        {
+            let persist = persist_runtime.clone();
+            ffmpeg_concurrency.connect_value_changed(move |_| persist());
+        }
+
+        page.add(&runtime_group);
+
+        // 4. Privacy & Compliance Group (PRD SEC-005)
         let privacy_group = libadwaita::PreferencesGroup::new();
         privacy_group.set_title("Privacy & Data Usage");
         privacy_group.set_description(Some(
