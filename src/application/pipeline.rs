@@ -406,6 +406,8 @@ impl PipelineOrchestrator {
                                 &translated_path,
                                 &mut artifact_manifest,
                             )?;
+                            ArtifactStore::invalidate_prefix(&mut artifact_manifest, "synthesis/");
+                            ArtifactStore::invalidate_prefix(&mut artifact_manifest, "alignment/");
                             artifact_store.save(&artifact_manifest)?;
                         }
                         Ok(None) => {
