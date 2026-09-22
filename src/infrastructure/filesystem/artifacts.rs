@@ -174,7 +174,10 @@ impl ArtifactStore {
     #[cfg(test)]
     pub fn from_manifest(job_dir: impl Into<PathBuf>, manifest: ArtifactManifest) -> Self {
         let store = Self::new(job_dir);
-        let _ = write_atomic(&store.manifest_path(), &serde_json::to_string_pretty(&manifest).unwrap());
+        let _ = write_atomic(
+            &store.manifest_path(),
+            &serde_json::to_string_pretty(&manifest).unwrap(),
+        );
         store
     }
 }
@@ -217,10 +220,7 @@ fn write_atomic(path: &Path, content: &str) -> Result<(), DomainError> {
         ))
     })?;
     std::fs::rename(&tmp, path).map_err(|e| {
-        DomainError::Internal(format!(
-            "Failed to publish artifact manifest: {}",
-            e
-        ))
+        DomainError::Internal(format!("Failed to publish artifact manifest: {}", e))
     })?;
     Ok(())
 }
