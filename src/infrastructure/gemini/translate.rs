@@ -348,7 +348,7 @@ impl TextTranslator for GeminiTranslator {
         let mut translated_segments = Vec::with_capacity(transcript.segments.len());
 
         for source_seg in &transcript.segments {
-            let translated_text = map.get(&source_seg.id).ok_or_else(|| {
+            let translated_text = map.get(&source_seg.id).cloned().ok_or_else(|| {
                 DomainError::PermanentApiError(format!(
                     "Translation response is missing segment_id '{}'",
                     source_seg.id
