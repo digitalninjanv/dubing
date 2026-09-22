@@ -54,7 +54,7 @@ impl LanguageId {
             "jv" => Some("jv-ID"),
             "ms" => Some("ms-MY"),
             "vi" => Some("vi-VN"),
-            "zh" => Some("zh-CN"),
+            "zh" => Some("cmn-Hans-CN"),
             "de" => Some("de-DE"),
             "fr" => Some("fr-FR"),
             _ => None,
@@ -194,7 +194,7 @@ impl LanguageRegistry {
             ),
             (
                 "zh",
-                "zh-CN",
+                "cmn-Hans-CN",
                 "Chinese (Mandarin)",
                 "中文",
                 true,
