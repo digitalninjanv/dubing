@@ -159,15 +159,16 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
         .validate_pair(&source_id, &target_id)
         .map_err(|e| format!("Language pair validation failed: {}", e))?;
 
-    let audio_engine = Arc::new(FfmpegAudioEngine::new());
+    let settings = AppSettings::load();
+    let audio_engine = Arc::new(FfmpegAudioEngine::with_concurrency(
+        settings.runtime.ffmpeg_concurrency,
+    ));
     let doc = audio_engine
         .inspect_and_validate(&input_path, 500 * 1024 * 1024)
         .await?;
 
     let job = audiodub::domain::Job::new(doc, source_id, target_id);
     let job_repo = Arc::new(FileJobRepository::new());
-
-    let settings = AppSettings::load();
     let cancel_token = CancellationToken::new();
     let providers =
         ProviderRegistry::standard().build(&settings, api_key, Some(cancel_token.clone()), None)?;
@@ -301,9 +302,11 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
     let target_id = LanguageId::new(&target_lang_str);
     registry.validate_pair(&source_id, &target_id)?;
 
-    let audio_engine = Arc::new(FfmpegAudioEngine::new());
-    let job_repo = Arc::new(FileJobRepository::new());
     let settings = AppSettings::load();
+    let audio_engine = Arc::new(FfmpegAudioEngine::with_concurrency(
+        settings.runtime.ffmpeg_concurrency,
+    ));
+    let job_repo = Arc::new(FileJobRepository::new());
 
     let voice_config = if voice_1.is_some() || voice_2.is_some() {
         Some(SpeakerVoiceConfig::new(voice_1, voice_2))
