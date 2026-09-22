@@ -211,7 +211,6 @@ impl AudioEngine for FfmpegAudioEngine {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::FfmpegAudioEngine;
