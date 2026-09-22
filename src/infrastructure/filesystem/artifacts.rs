@@ -137,9 +137,7 @@ impl ArtifactStore {
     }
 
     pub fn invalidate_prefix(manifest: &mut ArtifactManifest, prefix: &str) {
-        manifest
-            .artifacts
-            .retain(|key, _| !key.starts_with(prefix));
+        manifest.artifacts.retain(|key, _| !key.starts_with(prefix));
     }
 
     pub fn save(&self, manifest: &ArtifactManifest) -> Result<(), DomainError> {
