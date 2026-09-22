@@ -529,7 +529,7 @@ impl SpeechTranscriber for GeminiTranscriber {
         });
 
         if !source_hint.is_auto() {
-            transcription_config["language_code"] = json!(source_hint.as_str());
+            transcription_config["language_codes"] = json!([source_hint.as_str()]);
         }
 
         let request_body = json!({
