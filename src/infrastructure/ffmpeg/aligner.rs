@@ -82,8 +82,10 @@ impl FfmpegAligner {
         output_path: &Path,
         tempo: f64,
     ) -> Result<(), DomainError> {
-        // Clamp tempo between 0.75 and 1.50 for natural sounding speech without distortion
-        let clamped_tempo = tempo.clamp(0.75, 1.50);
+        // Keep time-stretch within a natural dubbing range; larger mismatches
+        // should be solved by translation adaptation/re-synthesis instead of
+        // making the generated voice sound unnaturally fast.
+        let clamped_tempo = tempo.clamp(0.75, 1.25);
         let output = Command::new("ffmpeg")
             .arg("-y")
             .arg("-i")
@@ -114,7 +116,7 @@ impl FfmpegAligner {
         tempo: Option<f64>,
     ) -> Result<u64, DomainError> {
         let filter = if let Some(t) = tempo {
-            let clamped = t.clamp(0.75, 1.50);
+            let clamped = t.clamp(0.75, 1.25);
             format!("silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB,atempo={:.3}", clamped)
         } else {
             "silenceremove=start_periods=1:start_duration=0.03:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB".to_string()
@@ -232,9 +234,9 @@ impl FfmpegAligner {
                         let ratio = (plan.raw_duration_ms as f64) / (plan.target_slot_ms as f64);
                         if ratio > 1.50 {
                             let new_duration =
-                                (plan.raw_duration_ms as f64 / 1.50).round() as u64;
+                                (plan.raw_duration_ms as f64 / 1.25).round() as u64;
                             warning = Some(format!(
-                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.50x (new duration: {}ms)",
+                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.25x (new duration: {}ms)",
                                 plan.segment_id, plan.raw_duration_ms, plan.target_slot_ms, ratio, new_duration
                             ));
                             Some(1.50)
