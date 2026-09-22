@@ -18,7 +18,10 @@ impl QualityGate {
 
         for (index, segment) in transcript.segments.iter().enumerate() {
             if segment.id.trim().is_empty() {
-                return Err(Self::fail(format!("Transcript segment {} has an empty id", index)));
+                return Err(Self::fail(format!(
+                    "Transcript segment {} has an empty id",
+                    index
+                )));
             }
             if !ids.insert(segment.id.as_str()) {
                 return Err(Self::fail(format!(
