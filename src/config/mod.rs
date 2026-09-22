@@ -1,3 +1,3 @@
 pub mod settings;
 
-pub use settings::{AppSettings, AudioConfig, ModelsConfig, ProvidersConfig};
+pub use settings::{AppSettings, AudioConfig, ModelsConfig, ProvidersConfig, RuntimeConfig};
