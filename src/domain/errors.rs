@@ -12,6 +12,15 @@ pub enum DomainError {
     #[error("Language '{0}' is not supported for {1}")]
     UnsupportedLanguage(String, String),
 
+    #[error("Unsupported provider: {0}")]
+    UnsupportedProvider(String),
+
+    #[error("Unsupported model '{model}' for {role}")]
+    UnsupportedModel { role: String, model: String },
+
+    #[error("Invalid application configuration: {0}")]
+    Configuration(String),
+
     #[error("API authentication failed: invalid or missing API key")]
     AuthenticationFailed,
 
@@ -48,6 +57,9 @@ impl DomainError {
             DomainError::InvalidAudio(_) => "Invalid Audio File",
             DomainError::UnsupportedFormat(_) => "Unsupported Audio Format",
             DomainError::UnsupportedLanguage(_, _) => "Language Not Supported",
+            DomainError::UnsupportedProvider(_) => "Provider Not Supported",
+            DomainError::UnsupportedModel { .. } => "Model Not Supported",
+            DomainError::Configuration(_) => "Configuration Error",
             DomainError::AuthenticationFailed => "Authentication Error",
             DomainError::TransientError(_) => "Temporary Service Issue",
             DomainError::PermanentApiError(_) => "AI Service Error",
