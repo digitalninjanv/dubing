@@ -1,7 +1,5 @@
 use super::model_registry::{ModelRegistry, ModelRole};
-use crate::application::ports::{
-    SpeechSynthesizer, SpeechTranscriber, TextTranslator,
-};
+use crate::application::ports::{SpeechSynthesizer, SpeechTranscriber, TextTranslator};
 use crate::config::AppSettings;
 use crate::domain::DomainError;
 use crate::infrastructure::gemini::{
@@ -56,8 +54,11 @@ impl ProviderRegistry {
         )?;
 
         for fallback in &settings.models.transcriber_fallbacks {
-            self.models
-                .validate(&settings.providers.transcriber, fallback, ModelRole::Transcription)?;
+            self.models.validate(
+                &settings.providers.transcriber,
+                fallback,
+                ModelRole::Transcription,
+            )?;
         }
         for fallback in &settings.models.translator_fallbacks {
             self.models
