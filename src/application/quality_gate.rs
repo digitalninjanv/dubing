@@ -33,7 +33,9 @@ impl QualityGate {
                 )));
             }
             if segment.start_ms < previous_start {
-                return Err(Self::fail("Transcript segments are not ordered by start time"));
+                return Err(Self::fail(
+                    "Transcript segments are not ordered by start time",
+                ));
             }
             if segment.text.trim().is_empty() {
                 return Err(Self::fail(format!(
