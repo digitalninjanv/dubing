@@ -253,6 +253,33 @@ mod tests {
     }
 
     #[test]
+    fn invalidate_prefix_removes_dependent_artifacts_only() {
+        let mut manifest = ArtifactManifest::default();
+        manifest.artifacts.insert(
+            "synthesis/0000".to_string(),
+            super::ArtifactRecord {
+                key: "synthesis/0000".to_string(),
+                relative_path: "a.wav".into(),
+                size_bytes: 1,
+                sha256: "a".to_string(),
+            },
+        );
+        manifest.artifacts.insert(
+            "translation".to_string(),
+            super::ArtifactRecord {
+                key: "translation".to_string(),
+                relative_path: "translation.json".into(),
+                size_bytes: 1,
+                sha256: "b".to_string(),
+            },
+        );
+
+        ArtifactStore::invalidate_prefix(&mut manifest, "synthesis/");
+        assert!(!manifest.artifacts.contains_key("synthesis/0000"));
+        assert!(manifest.artifacts.contains_key("translation"));
+    }
+
+    #[test]
     fn checksum_mismatch_invalidates_artifact() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("artifact.json");
