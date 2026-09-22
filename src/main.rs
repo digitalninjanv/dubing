@@ -169,12 +169,8 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
 
     let settings = AppSettings::load();
     let cancel_token = CancellationToken::new();
-    let providers = ProviderRegistry::standard().build(
-        &settings,
-        api_key,
-        Some(cancel_token.clone()),
-        None,
-    )?;
+    let providers =
+        ProviderRegistry::standard().build(&settings, api_key, Some(cancel_token.clone()), None)?;
 
     let orchestrator = PipelineOrchestrator::with_settings(
         providers.transcriber,
