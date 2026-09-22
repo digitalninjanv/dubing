@@ -9,13 +9,42 @@ use crate::domain::{
 use async_trait::async_trait;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
-pub struct FfmpegAudioEngine;
+pub struct FfmpegAudioEngine {
+    semaphore: Arc<Semaphore>,
+}
 
 impl FfmpegAudioEngine {
     pub fn new() -> Self {
-        Self
+        Self::with_concurrency(2)
+    }
+
+    pub fn with_concurrency(max_concurrency: usize) -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(max_concurrency.max(1))),
+        }
+    }
+
+    async fn run_blocking<F, T>(&self, operation: F) -> Result<T, DomainError>
+    where
+        F: FnOnce() -> Result<T, DomainError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|e| DomainError::Internal(format!("FFmpeg limiter closed: {}", e)))?;
+
+        let result = tokio::task::spawn_blocking(operation)
+            .await
+            .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?;
+
+        drop(permit);
+        result
     }
 }
 
@@ -29,9 +58,7 @@ impl Default for FfmpegAudioEngine {
 impl AudioEngine for FfmpegAudioEngine {
     async fn probe(&self, path: &Path) -> Result<MediaMetadata, DomainError> {
         let p = path.to_path_buf();
-        tokio::task::spawn_blocking(move || FfprobeInspector::probe(&p))
-            .await
-            .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+        self.run_blocking(move || FfprobeInspector::probe(&p)).await?
     }
 
     async fn inspect_and_validate(
@@ -91,7 +118,7 @@ impl AudioEngine for FfmpegAudioEngine {
         let source_timeline_owned = source_timeline.to_vec();
         let synthesized_owned = synthesized.to_vec();
 
-        tokio::task::spawn_blocking(move || {
+        self.run_blocking(move || {
             FfmpegAligner::align(
                 &job_dir_owned,
                 &source_timeline_owned,
@@ -99,8 +126,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 target_total_duration_ms,
             )
         })
-        .await
-        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+        .await?
     }
 
     async fn export_final(
@@ -115,7 +141,7 @@ impl AudioEngine for FfmpegAudioEngine {
         let segments_owned = aligned_segments.to_vec();
         let output_path_owned = output_path.to_path_buf();
 
-        tokio::task::spawn_blocking(move || {
+        self.run_blocking(move || {
             FfmpegExporter::export(
                 &segments_owned,
                 &output_path_owned,
@@ -125,8 +151,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 target_duration_ms,
             )
         })
-        .await
-        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+        .await?
     }
 
     async fn remux_video(
@@ -143,7 +168,7 @@ impl AudioEngine for FfmpegAudioEngine {
         let lang = subtitle_language.map(|s| s.to_string());
         let video_out = output_video.to_path_buf();
 
-        tokio::task::spawn_blocking(move || {
+        self.run_blocking(move || {
             FfmpegExporter::remux_video(
                 &video_in,
                 &audio_in,
@@ -152,8 +177,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 &video_out,
             )
         })
-        .await
-        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+        .await?
     }
 
     async fn mix_with_ducking(
@@ -166,11 +190,10 @@ impl AudioEngine for FfmpegAudioEngine {
         let voice_in = voiceover_audio.to_path_buf();
         let out = output_audio.to_path_buf();
 
-        tokio::task::spawn_blocking(move || {
+        self.run_blocking(move || {
             FfmpegExporter::mix_with_ducking(&bg_in, &voice_in, &out)
         })
-        .await
-        .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))?
+        .await?
     }
 
     async fn extract_audio(
@@ -181,9 +204,8 @@ impl AudioEngine for FfmpegAudioEngine {
         let v_in = video_path.to_path_buf();
         let a_out = output_audio_path.to_path_buf();
 
-        tokio::task::spawn_blocking(move || FfmpegExporter::extract_audio(&v_in, &a_out))
-            .await
-            .map_err(|e| DomainError::Internal(format!("Task join error: {}", e)))??;
+        self.run_blocking(move || FfmpegExporter::extract_audio(&v_in, &a_out))
+            .await?;
 
         self.inspect_and_validate(output_audio_path, 500 * 1024 * 1024)
             .await
