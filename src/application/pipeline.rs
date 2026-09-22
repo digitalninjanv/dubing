@@ -7,7 +7,9 @@ use crate::domain::{
     Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment, Transcript,
     TranslatedDocument, TranslationTone, VoiceProfile,
 };
-use crate::infrastructure::filesystem::{AppPaths, CleanupManager};
+use crate::infrastructure::filesystem::{
+    AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
+};
 use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -150,6 +152,18 @@ impl PipelineOrchestrator {
         let auto_cleanup = self.auto_cleanup;
         let debug_mode = self.debug_mode;
         let job_dir_cancel = job_dir.clone();
+        let artifact_store = ArtifactStore::new(&job_dir);
+        let mut artifact_manifest = match artifact_store.load() {
+            Ok(manifest) => manifest,
+            Err(err) => {
+                tracing::warn!(
+                    "Ignoring invalid artifact manifest for job {} and rebuilding it: {}",
+                    job.id,
+                    err
+                );
+                ArtifactManifest::default()
+            }
+        };
 
         // Helper closure to update progress, persist to disk, and notify UI.
         // Resume-tolerant: re-announcing the current stage is a no-op, and a
@@ -321,16 +335,35 @@ impl PipelineOrchestrator {
             let data = serde_json::to_string_pretty(&tr)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
             write_manifest_atomic(&translated_path, &data)?;
+            artifact_store.register("translation", &translated_path, &mut artifact_manifest)?;
+            artifact_store.save(&artifact_manifest)?;
 
             tr
         } else {
-            let translated_path = job_dir.join("translated.json");
-            let content = std::fs::read_to_string(translated_path).map_err(|e| {
+            let translated_path = artifact_store
+                .verify("translation", &artifact_manifest)?
+                .or_else(|| {
+                    let legacy_path = job_dir.join("translated.json");
+                    legacy_path.is_file().then_some(legacy_path)
+                })
+                .ok_or_else(|| {
+                    DomainError::Internal(
+                        "Translation artifact is missing or failed checksum validation".to_string(),
+                    )
+                })?;
+            let content = std::fs::read_to_string(&translated_path).map_err(|e| {
                 DomainError::Internal(format!("Failed to load translated doc: {}", e))
             })?;
-            serde_json::from_str(&content).map_err(|e| {
+            let parsed = serde_json::from_str(&content).map_err(|e| {
                 DomainError::Internal(format!("Failed to parse translated doc: {}", e))
-            })?
+            })?;
+
+            if !artifact_manifest.artifacts.contains_key("translation") {
+                artifact_store.register("translation", &translated_path, &mut artifact_manifest)?;
+                artifact_store.save(&artifact_manifest)?;
+            }
+
+            parsed
         };
         let t_translate = t_translate_start.elapsed();
 
@@ -456,6 +489,8 @@ impl PipelineOrchestrator {
         };
 
         let t_synthesis_start = Instant::now();
+        let synthesis_manifest = artifact_manifest.clone();
+        let artifact_store_for_tasks = artifact_store.clone();
         let mut tasks = Vec::with_capacity(translated.segments.len());
 
         for (idx, segment) in translated.segments.iter().enumerate() {
@@ -470,44 +505,39 @@ impl PipelineOrchestrator {
             let synth = self.synthesizer.clone();
             let engine = self.audio_engine.clone();
             let cancel = cancel_token.clone();
+            let synthesis_manifest_for_task = synthesis_manifest.clone();
+            let artifact_store_for_task = artifact_store_for_tasks.clone();
 
             tasks.push(async move {
                 if cancel.is_cancelled() {
                     return Err(DomainError::Cancelled);
                 }
 
-                // Resume capability: reuse existing file without ffprobe if
-                // size >0 (R3). Probe only as fallback to avoid 60 probes on resume.
-                if segment_output_file.exists() {
-                    if let Ok(meta) = std::fs::metadata(&segment_output_file) {
+                // Resume capability: reuse a checksum-verified artifact first.
+                // Legacy files are still accepted once and adopted into the manifest.
+                let tts_key = format!("synthesis/{idx:04}");
+                let has_manifest_record =
+                    synthesis_manifest_for_task.artifacts.contains_key(&tts_key);
+                let cached_path = artifact_store_for_task
+                    .verify(&tts_key, &synthesis_manifest_for_task)
+                    .ok()
+                    .flatten();
+
+                // A registered-but-invalid artifact must be regenerated. Only
+                // unregistered legacy files are eligible for one-time adoption.
+                if cached_path.is_some() || (!has_manifest_record && segment_output_file.exists()) {
+                    let candidate = cached_path.unwrap_or_else(|| segment_output_file.clone());
+                    if let Ok(meta) = std::fs::metadata(&candidate) {
                         if meta.len() > 1024 {
-                            // Try to infer duration from file size quickly; if
-                            // probing was done before, seg files are valid.
-                            // Keep a lightweight metadata check, probe only if needed.
-                            if let Ok(probe_meta) = engine.probe(&segment_output_file).await {
+                            if let Ok(probe_meta) = engine.probe(&candidate).await {
                                 if probe_meta.duration_ms > 0 {
                                     return Ok((
                                         idx,
                                         SynthesizedSegment {
                                             segment_id: seg.segment_id,
                                             speaker_id: seg.speaker_id,
-                                            path: segment_output_file,
+                                            path: candidate,
                                             duration_ms: probe_meta.duration_ms,
-                                        },
-                                    ));
-                                }
-                            } else if meta.len() > 4096 {
-                                // Fallback: assume ~1s per 32kB for 24kHz mono as estimate
-                                // to avoid probe cost on bulk resume (probe only on final validation).
-                                let est_ms = meta.len() / 32;
-                                if est_ms > 200 {
-                                    return Ok((
-                                        idx,
-                                        SynthesizedSegment {
-                                            segment_id: seg.segment_id,
-                                            speaker_id: seg.speaker_id,
-                                            path: segment_output_file.clone(),
-                                            duration_ms: est_ms,
                                         },
                                     ));
                                 }
@@ -562,6 +592,11 @@ impl PipelineOrchestrator {
                 }
             };
 
+            artifact_store.register(
+                format!("synthesis/{idx:04}"),
+                &synth_result.path,
+                &mut artifact_manifest,
+            )?;
             collected.push((idx, synth_result));
             job.progress.completed_segments += 1;
             job.progress.message = format!(
@@ -574,6 +609,7 @@ impl PipelineOrchestrator {
             if job.progress.completed_segments.is_multiple_of(5)
                 || job.progress.completed_segments == job.progress.total_segments
             {
+                artifact_store.save(&artifact_manifest)?;
                 self.job_repo.save(&job).await?;
             }
             on_progress(&job);
@@ -611,6 +647,11 @@ impl PipelineOrchestrator {
                 Some(source_duration_ms),
             )
             .await?;
+
+        for (idx, path) in alignment_res.aligned_files.iter().enumerate() {
+            artifact_store.register(format!("alignment/{idx:04}"), path, &mut artifact_manifest)?;
+        }
+        artifact_store.save(&artifact_manifest)?;
         let t_align = t_align_start.elapsed();
 
         // 6. Exporting Stage
@@ -645,6 +686,7 @@ impl PipelineOrchestrator {
                 Some(source_duration_ms),
             )
             .await?;
+
         let t_export = t_export_start.elapsed();
 
         // Generate Subtitle artifacts (.srt, .vtt, bilingual .txt)
