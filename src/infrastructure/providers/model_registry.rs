@@ -45,6 +45,15 @@ impl ModelCapabilities {
         }
     }
 
+    pub const fn general_text_audio() -> Self {
+        Self {
+            transcription: true,
+            translation: true,
+            tts: false,
+            streaming_tts: false,
+        }
+    }
+
     pub const fn tts() -> Self {
         Self {
             transcription: false,
@@ -87,7 +96,7 @@ impl ModelRegistry {
         registry.register(ModelSpec {
             provider: "gemini".to_string(),
             id: "gemini-3.1-flash-lite".to_string(),
-            capabilities: ModelCapabilities::translation(),
+            capabilities: ModelCapabilities::general_text_audio(),
         });
         registry.register(ModelSpec {
             provider: "gemini".to_string(),
