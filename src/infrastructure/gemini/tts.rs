@@ -442,7 +442,6 @@ impl GeminiSynthesizer {
     }
 }
 
-
 #[async_trait]
 impl SpeechSynthesizer for GeminiSynthesizer {
     async fn synthesize_segment(
