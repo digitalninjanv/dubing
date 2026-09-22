@@ -442,36 +442,6 @@ impl GeminiSynthesizer {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::GeminiSynthesizer;
-
-    #[test]
-    fn wav_duration_parser_handles_pcm_wav() {
-        let mut wav = Vec::new();
-        wav.extend_from_slice(b"RIFF");
-        wav.extend_from_slice(&36u32.to_le_bytes());
-        wav.extend_from_slice(b"WAVE");
-        wav.extend_from_slice(b"fmt ");
-        wav.extend_from_slice(&16u32.to_le_bytes());
-        wav.extend_from_slice(&1u16.to_le_bytes());
-        wav.extend_from_slice(&1u16.to_le_bytes());
-        wav.extend_from_slice(&24000u32.to_le_bytes());
-        wav.extend_from_slice(&48000u32.to_le_bytes());
-        wav.extend_from_slice(&2u16.to_le_bytes());
-        wav.extend_from_slice(&16u16.to_le_bytes());
-        wav.extend_from_slice(b"data");
-        wav.extend_from_slice(&48000u32.to_le_bytes());
-        wav.resize(44 + 48000, 0);
-
-        assert_eq!(GeminiSynthesizer::wav_duration_ms(&wav), Some(1000));
-    }
-
-    #[test]
-    fn wav_duration_parser_rejects_truncated_data() {
-        assert_eq!(GeminiSynthesizer::wav_duration_ms(b"RIFF"), None);
-    }
-}
 
 #[async_trait]
 impl SpeechSynthesizer for GeminiSynthesizer {
@@ -586,5 +556,36 @@ impl SpeechSynthesizer for GeminiSynthesizer {
         }
         self.synthesize_segment(&dummy, &custom_voice, output_path)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GeminiSynthesizer;
+
+    #[test]
+    fn wav_duration_parser_handles_pcm_wav() {
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&36u32.to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&24000u32.to_le_bytes());
+        wav.extend_from_slice(&48000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&48000u32.to_le_bytes());
+        wav.resize(44 + 48000, 0);
+
+        assert_eq!(GeminiSynthesizer::wav_duration_ms(&wav), Some(1000));
+    }
+
+    #[test]
+    fn wav_duration_parser_rejects_truncated_data() {
+        assert_eq!(GeminiSynthesizer::wav_duration_ms(b"RIFF"), None);
     }
 }
