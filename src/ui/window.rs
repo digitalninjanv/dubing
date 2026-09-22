@@ -9,9 +9,7 @@ use crate::config::AppSettings;
 use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
 use crate::infrastructure::ffmpeg::FfmpegAligner;
 use crate::infrastructure::filesystem::AppPaths;
-use crate::infrastructure::gemini::{
-    GeminiClient, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
-};
+use crate::infrastructure::providers::ProviderRegistry;
 use gtk4::prelude::*;
 use libadwaita::prelude::*;
 use std::cell::RefCell;
@@ -378,26 +376,23 @@ impl MainWindow {
                     let _ = sender_retry.send_blocking(UiMessage::ProgressDetail(msg.to_string()));
                 });
 
-                let gemini_client = GeminiClient::new(api_key)
-                    .with_status_callback(status_cb)
-                    .with_cancel_token(cancel_token.clone());
-                let transcriber = Arc::new(GeminiTranscriber::new(
-                    gemini_client.clone(),
-                    settings_bg.models.transcriber.clone(),
-                ));
-                let translator = Arc::new(GeminiTranslator::new(
-                    gemini_client.clone(),
-                    settings_bg.models.translator.clone(),
-                ));
-                let synthesizer = Arc::new(GeminiSynthesizer::new(
-                    gemini_client,
-                    settings_bg.models.tts.clone(),
-                ));
+                let providers = match ProviderRegistry::standard().build(
+                    &settings_bg,
+                    api_key,
+                    Some(cancel_token.clone()),
+                    Some(status_cb),
+                ) {
+                    Ok(providers) => providers,
+                    Err(e) => {
+                        let _ = sender_clone.send(UiMessage::Error(e)).await;
+                        return;
+                    }
+                };
 
                 let orchestrator = PipelineOrchestrator::with_settings(
-                    transcriber,
-                    translator,
-                    synthesizer,
+                    providers.transcriber,
+                    providers.translator,
+                    providers.synthesizer,
                     audio_engine_bg,
                     job_repo_bg,
                     &settings_bg,
@@ -476,8 +471,10 @@ impl MainWindow {
                 let (tx, rx) = async_channel::bounded::<Result<(PathBuf, u64), String>>(1);
                 tokio::spawn(async move {
                     let res: Result<(PathBuf, u64), String> = async {
-                        let client = GeminiClient::new(api_key).with_cancel_token(tts_token);
-                        let synth = GeminiSynthesizer::new(client, settings_bg.models.tts.clone());
+                        let providers = ProviderRegistry::standard()
+                            .build(&settings_bg, api_key, Some(tts_token), None)
+                            .map_err(|e| e.to_string())?;
+                        let synth = providers.synthesizer;
                         let ts = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs())
