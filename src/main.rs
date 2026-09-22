@@ -8,9 +8,7 @@ use audiodub::domain::{
 };
 use audiodub::infrastructure::ffmpeg::FfmpegAudioEngine;
 use audiodub::infrastructure::filesystem::FileJobRepository;
-use audiodub::infrastructure::gemini::{
-    GeminiClient, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
-};
+use audiodub::infrastructure::providers::ProviderRegistry;
 use audiodub::infrastructure::secrets::StandardSecretStore;
 use std::env;
 use std::path::PathBuf;
@@ -171,21 +169,13 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
 
     let settings = AppSettings::load();
     let cancel_token = CancellationToken::new();
-    let client = GeminiClient::new(api_key).with_cancel_token(cancel_token.clone());
-    let transcriber = Arc::new(GeminiTranscriber::new(
-        client.clone(),
-        settings.models.transcriber.clone(),
-    ));
-    let translator = Arc::new(GeminiTranslator::new(
-        client.clone(),
-        settings.models.translator.clone(),
-    ));
-    let synthesizer = Arc::new(GeminiSynthesizer::new(client, settings.models.tts.clone()));
+    let providers = ProviderRegistry::standard()
+        .build(&settings, api_key, Some(cancel_token.clone()), None)?;
 
     let orchestrator = PipelineOrchestrator::with_settings(
-        transcriber,
-        translator,
-        synthesizer,
+        providers.transcriber,
+        providers.translator,
+        providers.synthesizer,
         audio_engine,
         job_repo,
         &settings,
@@ -347,20 +337,16 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
         let job = audiodub::domain::Job::new(doc, source_id.clone(), target_id.clone());
         let cancel_token = CancellationToken::new();
         // Per-item client so retry backoffs observe this item's token.
-        let client = GeminiClient::new(api_key.clone()).with_cancel_token(cancel_token.clone());
-        let transcriber = Arc::new(GeminiTranscriber::new(
-            client.clone(),
-            settings.models.transcriber.clone(),
-        ));
-        let translator = Arc::new(GeminiTranslator::new(
-            client.clone(),
-            settings.models.translator.clone(),
-        ));
-        let synthesizer = Arc::new(GeminiSynthesizer::new(client, settings.models.tts.clone()));
+        let providers = ProviderRegistry::standard().build(
+            &settings,
+            api_key.clone(),
+            Some(cancel_token.clone()),
+            None,
+        )?;
         let orchestrator = PipelineOrchestrator::with_settings(
-            transcriber,
-            translator,
-            synthesizer,
+            providers.transcriber,
+            providers.translator,
+            providers.synthesizer,
             audio_engine.clone(),
             job_repo.clone(),
             &settings,
@@ -482,8 +468,14 @@ async fn run_tts_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     println!("  Output: {}", output_path.display());
 
     let settings = AppSettings::load();
-    let client = GeminiClient::new(api_key);
-    let synthesizer = GeminiSynthesizer::new(client, settings.models.tts.clone());
+    let tts_token = CancellationToken::new();
+    let providers = ProviderRegistry::standard().build(
+        &settings,
+        api_key,
+        Some(tts_token.clone()),
+        None,
+    )?;
+    let synthesizer = providers.synthesizer;
 
     let voice_profile = VoiceProfile {
         id: voice_name.to_lowercase(),
