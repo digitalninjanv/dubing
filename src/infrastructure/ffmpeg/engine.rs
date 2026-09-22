@@ -58,7 +58,8 @@ impl Default for FfmpegAudioEngine {
 impl AudioEngine for FfmpegAudioEngine {
     async fn probe(&self, path: &Path) -> Result<MediaMetadata, DomainError> {
         let p = path.to_path_buf();
-        self.run_blocking(move || FfprobeInspector::probe(&p)).await?
+        self.run_blocking(move || FfprobeInspector::probe(&p))
+            .await?
     }
 
     async fn inspect_and_validate(
