@@ -33,6 +33,15 @@ fn test_language_registry_standard() {
 }
 
 #[test]
+fn test_language_bcp47_hints() {
+    assert_eq!(LanguageId::new("id").to_bcp47(), Some("id-ID"));
+    assert_eq!(LanguageId::new("en").to_bcp47(), Some("en-US"));
+    assert_eq!(LanguageId::new("ja").to_bcp47(), Some("ja-JP"));
+    assert_eq!(LanguageId::new("jv").to_bcp47(), Some("jv-ID"));
+    assert_eq!(LanguageId::new("xyz").to_bcp47(), None);
+}
+
+#[test]
 fn test_audio_format_extensions() {
     assert_eq!(AudioFormat::from_extension("mp3"), Some(AudioFormat::Mp3));
     assert_eq!(AudioFormat::from_extension("WAV"), Some(AudioFormat::Wav));
