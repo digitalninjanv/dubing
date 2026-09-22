@@ -267,4 +267,23 @@ mod tests {
         let store = ArtifactStore::new(dir.path());
         assert_eq!(store.load().unwrap(), ArtifactManifest::default());
     }
+
+    #[test]
+    fn manifest_persists_and_reloads() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("artifact.bin");
+        std::fs::write(&path, b"persist-me").unwrap();
+
+        let store = ArtifactStore::new(dir.path());
+        let mut manifest = ArtifactManifest::default();
+        store.register("artifact", &path, &mut manifest).unwrap();
+        store.save(&manifest).unwrap();
+
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded, manifest);
+        assert_eq!(
+            store.verify("artifact", &loaded).unwrap(),
+            Some(path)
+        );
+    }
 }
