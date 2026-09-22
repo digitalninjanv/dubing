@@ -36,6 +36,9 @@ pub enum DomainError {
     #[error("Export failure: {0}")]
     ExportError(String),
 
+    #[error("Quality gate failure: {0}")]
+    QualityGate(String),
+
     #[error("Job was cancelled by user")]
     Cancelled,
 
@@ -65,6 +68,7 @@ impl DomainError {
             DomainError::PermanentApiError(_) => "AI Service Error",
             DomainError::AlignmentError(_) => "Audio Alignment Issue",
             DomainError::ExportError(_) => "Audio Export Failed",
+            DomainError::QualityGate(_) => "Quality Validation Failed",
             DomainError::Cancelled => "Job Cancelled",
             DomainError::Internal(_) => "System Error",
         }
