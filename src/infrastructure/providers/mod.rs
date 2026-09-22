@@ -61,8 +61,11 @@ impl ProviderRegistry {
             )?;
         }
         for fallback in &settings.models.translator_fallbacks {
-            self.models
-                .validate(&settings.providers.translator, fallback, ModelRole::Translation)?;
+            self.models.validate(
+                &settings.providers.translator,
+                fallback,
+                ModelRole::Translation,
+            )?;
         }
         for fallback in &settings.models.tts_fallbacks {
             self.models
