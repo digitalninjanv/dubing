@@ -335,11 +335,7 @@ impl PipelineOrchestrator {
             let data = serde_json::to_string_pretty(&tr)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
             write_manifest_atomic(&translated_path, &data)?;
-            artifact_store.register(
-                "translation",
-                &translated_path,
-                &mut artifact_manifest,
-            )?;
+            artifact_store.register("translation", &translated_path, &mut artifact_manifest)?;
             artifact_store.save(&artifact_manifest)?;
 
             tr
@@ -352,8 +348,7 @@ impl PipelineOrchestrator {
                 })
                 .ok_or_else(|| {
                     DomainError::Internal(
-                        "Translation artifact is missing or failed checksum validation"
-                            .to_string(),
+                        "Translation artifact is missing or failed checksum validation".to_string(),
                     )
                 })?;
             let content = std::fs::read_to_string(&translated_path).map_err(|e| {
@@ -364,11 +359,7 @@ impl PipelineOrchestrator {
             })?;
 
             if !artifact_manifest.artifacts.contains_key("translation") {
-                artifact_store.register(
-                    "translation",
-                    &translated_path,
-                    &mut artifact_manifest,
-                )?;
+                artifact_store.register("translation", &translated_path, &mut artifact_manifest)?;
                 artifact_store.save(&artifact_manifest)?;
             }
 
@@ -655,11 +646,7 @@ impl PipelineOrchestrator {
             .await?;
 
         for (idx, path) in alignment_res.aligned_files.iter().enumerate() {
-            artifact_store.register(
-                format!("alignment/{idx:04}"),
-                path,
-                &mut artifact_manifest,
-            )?;
+            artifact_store.register(format!("alignment/{idx:04}"), path, &mut artifact_manifest)?;
         }
         artifact_store.save(&artifact_manifest)?;
         let t_align = t_align_start.elapsed();
@@ -697,11 +684,7 @@ impl PipelineOrchestrator {
             )
             .await?;
 
-        artifact_store.register(
-            "output/audio",
-            &artifact.path,
-            &mut artifact_manifest,
-        )?;
+        artifact_store.register("output/audio", &artifact.path, &mut artifact_manifest)?;
         artifact_store.save(&artifact_manifest)?;
         let t_export = t_export_start.elapsed();
 
@@ -731,27 +714,18 @@ impl PipelineOrchestrator {
 
         if let Ok(()) = std::fs::write(&srt_path, generate_srt(&translated)) {
             artifact.subtitle_srt_path = Some(srt_path.clone());
-            let _ = artifact_store.register(
-                "output/subtitles.srt",
-                &srt_path,
-                &mut artifact_manifest,
-            );
+            let _ = artifact_store
+                .register("output/subtitles.srt", &srt_path, &mut artifact_manifest);
         }
         if let Ok(()) = std::fs::write(&vtt_path, generate_vtt(&translated)) {
             artifact.subtitle_vtt_path = Some(vtt_path.clone());
-            let _ = artifact_store.register(
-                "output/subtitles.vtt",
-                &vtt_path,
-                &mut artifact_manifest,
-            );
+            let _ = artifact_store
+                .register("output/subtitles.vtt", &vtt_path, &mut artifact_manifest);
         }
         if let Ok(()) = std::fs::write(&txt_path, generate_bilingual_txt(&translated)) {
             artifact.transcript_txt_path = Some(txt_path.clone());
-            let _ = artifact_store.register(
-                "output/bilingual.txt",
-                &txt_path,
-                &mut artifact_manifest,
-            );
+            let _ = artifact_store
+                .register("output/bilingual.txt", &txt_path, &mut artifact_manifest);
         }
         artifact_store.save(&artifact_manifest)?;
 
