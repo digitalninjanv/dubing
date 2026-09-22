@@ -1,8 +1,8 @@
 use super::ports::{
     AudioEngine, JobRepository, SpeechSynthesizer, SpeechTranscriber, TextTranslator,
 };
-use crate::config::{AppSettings, AudioConfig};
 use crate::application::quality_gate::QualityGate;
+use crate::config::{AppSettings, AudioConfig};
 use crate::domain::{
     generate_bilingual_txt, generate_srt, generate_vtt, AudioArtifact, AudioFormat, DomainError,
     Job, LanguageRegistry, PipelineStage, SpeakerVoiceConfig, SynthesizedSegment, Transcript,
@@ -395,7 +395,10 @@ impl PipelineOrchestrator {
                             let translated_path = job_dir.join("translated.json");
                             QualityGate::validate_translation(&transcript, &translated)?;
                             let data = serde_json::to_string_pretty(&translated).map_err(|e| {
-                                DomainError::Internal(format!("Serialize reviewed translation: {}", e))
+                                DomainError::Internal(format!(
+                                    "Serialize reviewed translation: {}",
+                                    e
+                                ))
                             })?;
                             write_manifest_atomic(&translated_path, &data)?;
                             artifact_store.register(
