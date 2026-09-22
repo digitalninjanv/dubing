@@ -415,7 +415,11 @@ async fn test_gemini_synthesizer_fallback_to_25_flash_tts() {
         .with_base_url(server.uri())
         .with_backoffs(vec![0]);
 
-    let synth = GeminiSynthesizer::new(client, "gemini-3.1-flash-tts-preview");
+    let synth = GeminiSynthesizer::new_with_fallbacks(
+        client,
+        "gemini-3.1-flash-tts-preview",
+        vec!["gemini-2.5-flash-preview-tts".to_string()],
+    );
     let temp_dir = tempdir().unwrap();
     let out_file = temp_dir.path().join("fallback_test.wav");
 

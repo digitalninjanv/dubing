@@ -3,18 +3,81 @@ use crate::infrastructure::filesystem::AppPaths;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelsConfig {
+pub struct ProvidersConfig {
+    #[serde(default = "default_gemini_provider")]
     pub transcriber: String,
+    #[serde(default = "default_gemini_provider")]
     pub translator: String,
+    #[serde(default = "default_gemini_provider")]
     pub tts: String,
+}
+
+fn default_gemini_provider() -> String {
+    "gemini".to_string()
+}
+
+impl Default for ProvidersConfig {
+    fn default() -> Self {
+        Self {
+            transcriber: default_gemini_provider(),
+            translator: default_gemini_provider(),
+            tts: default_gemini_provider(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelsConfig {
+    #[serde(default = "default_transcriber_model")]
+    pub transcriber: String,
+    #[serde(default = "default_transcriber_fallbacks")]
+    pub transcriber_fallbacks: Vec<String>,
+    #[serde(default = "default_translator_model")]
+    pub translator: String,
+    #[serde(default = "default_translator_fallbacks")]
+    pub translator_fallbacks: Vec<String>,
+    #[serde(default = "default_tts_model")]
+    pub tts: String,
+    #[serde(default = "default_tts_fallbacks")]
+    pub tts_fallbacks: Vec<String>,
+}
+
+fn default_transcriber_model() -> String {
+    "gemini-3.5-transcribe".to_string()
+}
+
+fn default_transcriber_fallbacks() -> Vec<String> {
+    vec!["gemini-3.5-flash".to_string()]
+}
+
+fn default_translator_model() -> String {
+    "gemini-3.1-flash-lite".to_string()
+}
+
+fn default_translator_fallbacks() -> Vec<String> {
+    vec![
+        "gemini-3.5-flash-lite".to_string(),
+        "gemini-3.5-flash".to_string(),
+    ]
+}
+
+fn default_tts_model() -> String {
+    "gemini-3.1-flash-tts-preview".to_string()
+}
+
+fn default_tts_fallbacks() -> Vec<String> {
+    Vec::new()
 }
 
 impl Default for ModelsConfig {
     fn default() -> Self {
         Self {
-            transcriber: "gemini-3.5-transcribe".to_string(),
-            translator: "gemini-3.1-flash-lite".to_string(),
-            tts: "gemini-3.1-flash-tts-preview".to_string(),
+            transcriber: default_transcriber_model(),
+            transcriber_fallbacks: default_transcriber_fallbacks(),
+            translator: default_translator_model(),
+            translator_fallbacks: default_translator_fallbacks(),
+            tts: default_tts_model(),
+            tts_fallbacks: default_tts_fallbacks(),
         }
     }
 }
@@ -50,6 +113,8 @@ impl Default for AudioConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     #[serde(default)]
+    pub providers: ProvidersConfig,
+    #[serde(default)]
     pub models: ModelsConfig,
     #[serde(default)]
     pub audio: AudioConfig,
@@ -73,6 +138,7 @@ fn default_retention_days() -> u64 {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            providers: ProvidersConfig::default(),
             models: ModelsConfig::default(),
             audio: AudioConfig::default(),
             auto_cleanup: true,

@@ -83,15 +83,25 @@ pub struct GeminiTranscriber {
     client: GeminiClient,
     files_api: GeminiFilesApi,
     model_name: String,
+    fallback_models: Vec<String>,
 }
 
 impl GeminiTranscriber {
     pub fn new(client: GeminiClient, model_name: impl Into<String>) -> Self {
+        Self::new_with_fallbacks(client, model_name, vec!["gemini-3.5-flash".to_string()])
+    }
+
+    pub fn new_with_fallbacks(
+        client: GeminiClient,
+        model_name: impl Into<String>,
+        fallback_models: Vec<String>,
+    ) -> Self {
         let files_api = GeminiFilesApi::new(client.clone());
         Self {
             client,
             files_api,
             model_name: model_name.into(),
+            fallback_models,
         }
     }
 
@@ -112,10 +122,10 @@ impl GeminiTranscriber {
         file_info: &super::files::GeminiFileInfo,
         source_hint: &LanguageId,
     ) -> Result<Transcript, DomainError> {
-        let models = ["gemini-3.5-flash", "gemini-2.5-flash"];
         let mut last_err = None;
 
-        for model in models {
+        for model in &self.fallback_models {
+            let model = model.as_str();
             let endpoint = format!(
                 "{}/v1beta/models/{}:generateContent",
                 self.client.base_url(),
@@ -315,7 +325,12 @@ Respond with ONLY a valid JSON object matching this schema:
         let b64_audio = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
         // Drop raw bytes promptly before building the large JSON body.
         drop(file_bytes);
-        let models = ["gemini-3.5-flash", "gemini-2.5-flash"];
+        if self.fallback_models.is_empty() {
+            return Err(DomainError::PermanentApiError(
+                "No transcription fallback model is configured".to_string(),
+            ));
+        }
+
         let mut last_err = None;
 
         let lang_instruction = if source_hint.is_auto() {
@@ -379,7 +394,8 @@ Respond with ONLY a valid JSON object matching this schema:
             ))
         })?;
 
-        for model in models {
+        for model in &self.fallback_models {
+            let model = model.as_str();
             let endpoint = format!(
                 "{}/v1beta/models/{}:generateContent",
                 self.client.base_url(),
