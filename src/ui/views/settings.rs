@@ -199,8 +199,7 @@ impl SettingsDialog {
         spacing_row.set_activatable_widget(Some(&spacing));
         runtime_group.add(&spacing_row);
 
-        let translation_concurrency =
-            gtk4::SpinButton::with_range(1.0, 8.0, 1.0);
+        let translation_concurrency = gtk4::SpinButton::with_range(1.0, 8.0, 1.0);
         translation_concurrency.set_value(settings.runtime.translation_concurrency as f64);
         let translation_row = libadwaita::ActionRow::new();
         translation_row.set_title("Translation Parallel Requests");
