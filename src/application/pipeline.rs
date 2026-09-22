@@ -523,12 +523,15 @@ impl PipelineOrchestrator {
                 // Resume capability: reuse a checksum-verified artifact first.
                 // Legacy files are still accepted once and adopted into the manifest.
                 let tts_key = format!("synthesis/{idx:04}");
+                let has_manifest_record = synthesis_manifest.artifacts.contains_key(&tts_key);
                 let cached_path = artifact_store_for_tasks
                     .verify(&tts_key, &synthesis_manifest)
                     .ok()
                     .flatten();
 
-                if cached_path.is_some() || segment_output_file.exists() {
+                // A registered-but-invalid artifact must be regenerated. Only
+                // unregistered legacy files are eligible for one-time adoption.
+                if cached_path.is_some() || (!has_manifest_record && segment_output_file.exists()) {
                     let candidate = cached_path.unwrap_or_else(|| segment_output_file.clone());
                     if let Ok(meta) = std::fs::metadata(&candidate) {
                         if meta.len() > 1024 {
