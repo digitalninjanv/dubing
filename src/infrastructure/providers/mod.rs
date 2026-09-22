@@ -1,3 +1,5 @@
+pub mod model_registry;
+
 use super::model_registry::{ModelRegistry, ModelRole};
 use crate::application::ports::{SpeechSynthesizer, SpeechTranscriber, TextTranslator};
 use crate::config::AppSettings;
