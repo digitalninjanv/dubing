@@ -816,12 +816,12 @@ impl PipelineOrchestrator {
         self.job_repo.save(&job).await?;
         on_progress(&job);
 
-        QualityGate::validate_output(&artifact).map_err(|err| {
+        if let Err(err) = QualityGate::validate_output(&artifact) {
             job.fail(false, err.to_string());
-            err
-        })?;
-        self.job_repo.save(&job).await?;
-        on_progress(&job);
+            self.job_repo.save(&job).await?;
+            on_progress(&job);
+            return Err(err);
+        }
 
         // 8. Completed Stage
         update_stage(
