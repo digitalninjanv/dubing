@@ -1,5 +1,5 @@
 use audiodub::app::AudioDubApp;
-use audiodub::application::ports::{AudioEngine, SecretStore, SpeechSynthesizer};
+use audiodub::application::ports::{AudioEngine, SecretStore};
 use audiodub::application::{PipelineOptions, PipelineOrchestrator};
 use audiodub::config::AppSettings;
 use audiodub::domain::{
