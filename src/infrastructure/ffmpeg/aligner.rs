@@ -243,7 +243,7 @@ impl FfmpegAligner {
                             let new_duration =
                                 (plan.raw_duration_ms as f64 / 1.50).round() as u64;
                             warning = Some(format!(
-                                "Segment {} duration ({}ms) exceeded the preferred 1.25x stretch range and was clamped to 1.50x (new duration: {}ms)",
+                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; preferred natural limit is 1.25x, hard-clamped to 1.50x (new duration: {}ms)",
                                 plan.segment_id, plan.raw_duration_ms, plan.target_slot_ms, ratio, new_duration
                             ));
                             Some(1.50)
