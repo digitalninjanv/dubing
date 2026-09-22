@@ -54,13 +54,23 @@ struct InteractionsAudio {
 pub struct GeminiSynthesizer {
     client: GeminiClient,
     model_name: String,
+    fallback_models: Vec<String>,
 }
 
 impl GeminiSynthesizer {
     pub fn new(client: GeminiClient, model_name: impl Into<String>) -> Self {
+        Self::new_with_fallbacks(client, model_name, Vec::new())
+    }
+
+    pub fn new_with_fallbacks(
+        client: GeminiClient,
+        model_name: impl Into<String>,
+        fallback_models: Vec<String>,
+    ) -> Self {
         Self {
             client,
             model_name: model_name.into(),
+            fallback_models,
         }
     }
 
@@ -451,8 +461,8 @@ impl SpeechSynthesizer for GeminiSynthesizer {
         output_path: &Path,
     ) -> Result<SynthesizedSegment, DomainError> {
         let mut candidates = vec![self.model_name.as_str()];
-        let fallbacks = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
-        for fb in fallbacks {
+        for fb in &self.fallback_models {
+            let fb = fb.as_str();
             if !candidates.contains(&fb) {
                 candidates.push(fb);
             }
