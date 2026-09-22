@@ -136,6 +136,12 @@ impl ArtifactStore {
         Ok(Some(path))
     }
 
+    pub fn invalidate_prefix(manifest: &mut ArtifactManifest, prefix: &str) {
+        manifest
+            .artifacts
+            .retain(|key, _| !key.starts_with(prefix));
+    }
+
     pub fn save(&self, manifest: &ArtifactManifest) -> Result<(), DomainError> {
         let content = serde_json::to_string_pretty(manifest).map_err(|e| {
             DomainError::Internal(format!("Failed to serialize artifact manifest: {}", e))
