@@ -30,7 +30,7 @@ impl FfmpegAudioEngine {
 
     async fn run_blocking<F, T>(&self, operation: F) -> Result<T, DomainError>
     where
-        F: FnOnce() -> Result<T, DomainError> + Send + 'static,
+        F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
         let permit = self
@@ -127,7 +127,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 target_total_duration_ms,
             )
         })
-        .await?
+        .await
     }
 
     async fn export_final(
@@ -152,7 +152,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 target_duration_ms,
             )
         })
-        .await?
+        .await
     }
 
     async fn remux_video(
@@ -178,7 +178,7 @@ impl AudioEngine for FfmpegAudioEngine {
                 &video_out,
             )
         })
-        .await?
+        .await
     }
 
     async fn mix_with_ducking(
@@ -192,7 +192,7 @@ impl AudioEngine for FfmpegAudioEngine {
         let out = output_audio.to_path_buf();
 
         self.run_blocking(move || FfmpegExporter::mix_with_ducking(&bg_in, &voice_in, &out))
-            .await?
+            .await
     }
 
     async fn extract_audio(
@@ -204,7 +204,7 @@ impl AudioEngine for FfmpegAudioEngine {
         let a_out = output_audio_path.to_path_buf();
 
         self.run_blocking(move || FfmpegExporter::extract_audio(&v_in, &a_out))
-            .await?;
+            .await??;
 
         self.inspect_and_validate(output_audio_path, 500 * 1024 * 1024)
             .await
