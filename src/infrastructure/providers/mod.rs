@@ -90,10 +90,12 @@ impl ProviderRegistry {
                 settings.models.transcriber.clone(),
                 settings.models.transcriber_fallbacks.clone(),
             )),
-            translator: Arc::new(GeminiTranslator::new_with_fallbacks(
+            translator: Arc::new(GeminiTranslator::new_with_fallbacks_and_limits(
                 client.clone(),
                 settings.models.translator.clone(),
                 settings.models.translator_fallbacks.clone(),
+                settings.runtime.translation_batch_size,
+                settings.runtime.translation_concurrency,
             )),
             synthesizer: Arc::new(GeminiSynthesizer::new_with_fallbacks(
                 client,

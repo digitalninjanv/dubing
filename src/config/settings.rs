@@ -100,6 +100,63 @@ fn default_bitrate() -> u32 {
     192
 }
 
+fn default_tts_concurrency() -> usize {
+    2
+}
+
+fn default_tts_spacing_ms() -> u64 {
+    120
+}
+
+fn default_translation_concurrency() -> usize {
+    3
+}
+
+fn default_translation_batch_size() -> usize {
+    20
+}
+
+fn default_ffmpeg_concurrency() -> usize {
+    2
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfig {
+    #[serde(default = "default_tts_concurrency")]
+    pub tts_concurrency: usize,
+    #[serde(default = "default_tts_spacing_ms")]
+    pub tts_request_spacing_ms: u64,
+    #[serde(default = "default_translation_concurrency")]
+    pub translation_concurrency: usize,
+    #[serde(default = "default_translation_batch_size")]
+    pub translation_batch_size: usize,
+    #[serde(default = "default_ffmpeg_concurrency")]
+    pub ffmpeg_concurrency: usize,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            tts_concurrency: default_tts_concurrency(),
+            tts_request_spacing_ms: default_tts_spacing_ms(),
+            translation_concurrency: default_translation_concurrency(),
+            translation_batch_size: default_translation_batch_size(),
+            ffmpeg_concurrency: default_ffmpeg_concurrency(),
+        }
+    }
+}
+
+impl RuntimeConfig {
+    pub fn normalized(mut self) -> Self {
+        self.tts_concurrency = self.tts_concurrency.clamp(1, 8);
+        self.tts_request_spacing_ms = self.tts_request_spacing_ms.min(5_000);
+        self.translation_concurrency = self.translation_concurrency.clamp(1, 8);
+        self.translation_batch_size = self.translation_batch_size.clamp(1, 50);
+        self.ffmpeg_concurrency = self.ffmpeg_concurrency.clamp(1, 4);
+        self
+    }
+}
+
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
@@ -118,6 +175,8 @@ pub struct AppSettings {
     pub models: ModelsConfig,
     #[serde(default)]
     pub audio: AudioConfig,
+    #[serde(default)]
+    pub runtime: RuntimeConfig,
     #[serde(default = "default_true")]
     pub auto_cleanup: bool,
     #[serde(default)]
@@ -141,6 +200,7 @@ impl Default for AppSettings {
             providers: ProvidersConfig::default(),
             models: ModelsConfig::default(),
             audio: AudioConfig::default(),
+            runtime: RuntimeConfig::default(),
             auto_cleanup: true,
             debug_mode: false,
             job_retention_days: default_retention_days(),
@@ -149,13 +209,18 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    pub fn normalized(mut self) -> Self {
+        self.runtime = self.runtime.normalized();
+        self
+    }
+
     /// Load from `~/.config/audiodub/config.toml`; missing/corrupt file
     /// falls back to defaults (never fails startup).
     pub fn load() -> Self {
         let path = AppPaths::config_file();
         match std::fs::read_to_string(&path) {
             Ok(content) => match toml::from_str::<AppSettings>(&content) {
-                Ok(s) => s,
+                Ok(s) => s.normalized(),
                 Err(e) => {
                     tracing::warn!("Ignoring corrupt settings file {}: {}", path.display(), e);
                     Self::default()
@@ -173,7 +238,8 @@ impl AppSettings {
                 DomainError::Internal(format!("Failed to create config dir: {}", e))
             })?;
         }
-        let content = toml::to_string_pretty(self)
+        let normalized = self.clone().normalized();
+        let content = toml::to_string_pretty(&normalized)
             .map_err(|e| DomainError::Internal(format!("Failed to serialize settings: {}", e)))?;
         let tmp = path.with_extension("toml.tmp");
         std::fs::write(&tmp, content).map_err(|e| {
@@ -183,5 +249,28 @@ impl AppSettings {
             DomainError::Internal(format!("Failed to publish settings file: {}", e))
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::RuntimeConfig;
+
+    #[test]
+    fn runtime_limits_never_allow_zero_or_unbounded_values() {
+        let config = RuntimeConfig {
+            tts_concurrency: 0,
+            tts_request_spacing_ms: u64::MAX,
+            translation_concurrency: 99,
+            translation_batch_size: 0,
+            ffmpeg_concurrency: 99,
+        }
+        .normalized();
+
+        assert_eq!(config.tts_concurrency, 1);
+        assert_eq!(config.tts_request_spacing_ms, 5_000);
+        assert_eq!(config.translation_concurrency, 8);
+        assert_eq!(config.translation_batch_size, 1);
+        assert_eq!(config.ffmpeg_concurrency, 4);
     }
 }

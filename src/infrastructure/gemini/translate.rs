@@ -43,6 +43,8 @@ pub struct GeminiTranslator {
     client: GeminiClient,
     model_name: String,
     fallback_models: Vec<String>,
+    batch_size: usize,
+    max_concurrency: usize,
 }
 
 impl GeminiTranslator {
@@ -62,10 +64,22 @@ impl GeminiTranslator {
         model_name: impl Into<String>,
         fallback_models: Vec<String>,
     ) -> Self {
+        Self::new_with_fallbacks_and_limits(client, model_name, fallback_models, 20, 3)
+    }
+
+    pub fn new_with_fallbacks_and_limits(
+        client: GeminiClient,
+        model_name: impl Into<String>,
+        fallback_models: Vec<String>,
+        batch_size: usize,
+        max_concurrency: usize,
+    ) -> Self {
         Self {
             client,
             model_name: model_name.into(),
             fallback_models,
+            batch_size: batch_size.clamp(1, 50),
+            max_concurrency: max_concurrency.clamp(1, 8),
         }
     }
 
@@ -283,11 +297,10 @@ impl TextTranslator for GeminiTranslator {
             ));
         }
 
-        // Chunking rule: process in chunks of 20 segments to prevent token exhaustion and missing items
-        const CHUNK_SIZE: usize = 20;
         let mut raw_translations = Vec::new();
 
-        let chunks: Vec<&[TranscriptSegment]> = transcript.segments.chunks(CHUNK_SIZE).collect();
+        let chunks: Vec<&[TranscriptSegment]> =
+            transcript.segments.chunks(self.batch_size).collect();
         if chunks.len() <= 1 {
             if let Some(first_chunk) = chunks.first() {
                 let chunk_items = self.translate_chunk(first_chunk, target_lang, tone).await?;
@@ -301,7 +314,7 @@ impl TextTranslator for GeminiTranslator {
             use std::sync::Arc;
             let indexed: Vec<(usize, Arc<[TranscriptSegment]>)> = transcript
                 .segments
-                .chunks(CHUNK_SIZE)
+                .chunks(self.batch_size)
                 .enumerate()
                 .map(|(i, c)| (i, Arc::from(c)))
                 .collect();
@@ -313,7 +326,7 @@ impl TextTranslator for GeminiTranslator {
                         Ok::<_, DomainError>((i, items))
                     }
                 })
-                .buffer_unordered(3);
+                .buffer_unordered(self.max_concurrency);
             let mut ordered: Vec<(usize, Vec<RawTranslatedItem>)> =
                 Vec::with_capacity(chunks.len());
             while let Some(res) = stream.next().await {
