@@ -714,18 +714,18 @@ impl PipelineOrchestrator {
 
         if let Ok(()) = std::fs::write(&srt_path, generate_srt(&translated)) {
             artifact.subtitle_srt_path = Some(srt_path.clone());
-            let _ = artifact_store
-                .register("output/subtitles.srt", &srt_path, &mut artifact_manifest);
+            let _ =
+                artifact_store.register("output/subtitles.srt", &srt_path, &mut artifact_manifest);
         }
         if let Ok(()) = std::fs::write(&vtt_path, generate_vtt(&translated)) {
             artifact.subtitle_vtt_path = Some(vtt_path.clone());
-            let _ = artifact_store
-                .register("output/subtitles.vtt", &vtt_path, &mut artifact_manifest);
+            let _ =
+                artifact_store.register("output/subtitles.vtt", &vtt_path, &mut artifact_manifest);
         }
         if let Ok(()) = std::fs::write(&txt_path, generate_bilingual_txt(&translated)) {
             artifact.transcript_txt_path = Some(txt_path.clone());
-            let _ = artifact_store
-                .register("output/bilingual.txt", &txt_path, &mut artifact_manifest);
+            let _ =
+                artifact_store.register("output/bilingual.txt", &txt_path, &mut artifact_manifest);
         }
         artifact_store.save(&artifact_manifest)?;
 
