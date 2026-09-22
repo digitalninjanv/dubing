@@ -3,7 +3,7 @@ use super::views::{
     TtsStudioView,
 };
 use crate::application::pipeline::ReviewRequest;
-use crate::application::ports::{AudioEngine, JobRepository, SecretStore, SpeechSynthesizer};
+use crate::application::ports::{AudioEngine, JobRepository, SecretStore};
 use crate::application::{PipelineOptions, PipelineOrchestrator};
 use crate::config::AppSettings;
 use crate::domain::{AudioArtifact, DomainError, Job, JobProgress, LanguageRegistry};
