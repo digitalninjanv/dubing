@@ -469,12 +469,8 @@ async fn run_tts_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
 
     let settings = AppSettings::load();
     let tts_token = CancellationToken::new();
-    let providers = ProviderRegistry::standard().build(
-        &settings,
-        api_key,
-        Some(tts_token.clone()),
-        None,
-    )?;
+    let providers =
+        ProviderRegistry::standard().build(&settings, api_key, Some(tts_token.clone()), None)?;
     let synthesizer = providers.synthesizer;
 
     let voice_profile = VoiceProfile {
