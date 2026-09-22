@@ -158,7 +158,10 @@ impl QualityGate {
                     segment.segment_id
                 )));
             }
-            Self::validate_file(&segment.path, &format!("synthesis '{}'", segment.segment_id))?;
+            Self::validate_file(
+                &segment.path,
+                &format!("synthesis '{}'", segment.segment_id),
+            )?;
         }
 
         Ok(())
@@ -224,7 +227,7 @@ impl QualityGate {
 mod tests {
     use super::QualityGate;
     use crate::domain::{
-        LanguageId, Transcript, TranscriptSegment, TranslationSegment, TranslatedDocument,
+        LanguageId, Transcript, TranscriptSegment, TranslatedDocument, TranslationSegment,
     };
 
     fn transcript() -> Transcript {
