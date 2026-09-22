@@ -529,7 +529,14 @@ impl SpeechTranscriber for GeminiTranscriber {
         });
 
         if !source_hint.is_auto() {
-            transcription_config["language_code"] = json!(source_hint.as_str());
+            if let Some(locale) = source_hint.to_bcp47() {
+                transcription_config["language_codes"] = json!([locale]);
+            } else {
+                tracing::warn!(
+                    "Unsupported BCP-47 language hint '{}'; letting Gemini auto-detect",
+                    source_hint
+                );
+            }
         }
 
         let request_body = json!({

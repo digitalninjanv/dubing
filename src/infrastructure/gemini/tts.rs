@@ -313,6 +313,77 @@ impl GeminiSynthesizer {
             .await
     }
 
+    /// Read duration directly from a canonical PCM WAV buffer.
+    ///
+    /// Generated Gemini TTS audio is wrapped as 24 kHz, 16-bit mono PCM WAV.
+    /// Parsing its RIFF container avoids spawning ffprobe for every segment.
+    fn wav_duration_ms(data: &[u8]) -> Option<u64> {
+        if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+            return None;
+        }
+
+        let mut offset = 12usize;
+        let mut byte_rate = None::<u32>;
+
+        while offset + 8 <= data.len() {
+            let chunk_id = &data[offset..offset + 4];
+            let chunk_size = u32::from_le_bytes([
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
+            ]) as usize;
+            let chunk_start = offset + 8;
+            let chunk_end = chunk_start.saturating_add(chunk_size);
+
+            if chunk_end > data.len() {
+                return None;
+            }
+
+            match chunk_id {
+                b"fmt " if chunk_size >= 16 => {
+                    let channels =
+                        u16::from_le_bytes([data[chunk_start + 2], data[chunk_start + 3]]);
+                    let sample_rate = u32::from_le_bytes([
+                        data[chunk_start + 4],
+                        data[chunk_start + 5],
+                        data[chunk_start + 6],
+                        data[chunk_start + 7],
+                    ]);
+                    let bits_per_sample =
+                        u16::from_le_bytes([data[chunk_start + 14], data[chunk_start + 15]]);
+
+                    if channels == 0 || sample_rate == 0 || bits_per_sample < 8 {
+                        return None;
+                    }
+
+                    let bytes_per_sample = (bits_per_sample / 8) as u32;
+                    if bytes_per_sample == 0 {
+                        return None;
+                    }
+
+                    byte_rate = Some(
+                        sample_rate
+                            .saturating_mul(channels as u32)
+                            .saturating_mul(bytes_per_sample),
+                    );
+                }
+                b"data" => {
+                    if let Some(rate) = byte_rate {
+                        if rate > 0 {
+                            return Some((chunk_size as u64 * 1000) / rate as u64);
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            offset = chunk_end + (chunk_size & 1);
+        }
+
+        None
+    }
+
     /// Write decoded audio bytes to disk (wrapping raw PCM in WAV when needed)
     /// and probe the resulting duration.
     async fn persist_segment_bytes(
@@ -321,26 +392,52 @@ impl GeminiSynthesizer {
         output_bytes: Vec<u8>,
         segment: &TranslationSegment,
     ) -> Result<SynthesizedSegment, DomainError> {
-        let mut file = File::create(output_path).map_err(|e| {
-            DomainError::Internal(format!("Failed to create segment audio file: {}", e))
+        let tmp_path = output_path.with_extension("wav.tmp");
+        let mut file = File::create(&tmp_path).map_err(|e| {
+            DomainError::Internal(format!(
+                "Failed to create temporary segment audio file: {}",
+                e
+            ))
         })?;
 
         file.write_all(&output_bytes).map_err(|e| {
             DomainError::Internal(format!("Failed to write segment audio bytes: {}", e))
         })?;
+        file.sync_all().map_err(|e| {
+            DomainError::Internal(format!("Failed to flush segment audio file: {}", e))
+        })?;
         drop(file);
 
-        // Probe the segment duration
-        let p = output_path.to_path_buf();
-        let metadata = tokio::task::spawn_blocking(move || FfprobeInspector::probe(&p))
-            .await
-            .map_err(|e| DomainError::Internal(format!("Task error: {}", e)))??;
+        let duration_ms = if output_bytes.starts_with(b"RIFF") {
+            Self::wav_duration_ms(&output_bytes).ok_or_else(|| {
+                DomainError::PermanentApiError(
+                    "Generated WAV audio has an invalid or unsupported header".to_string(),
+                )
+            })?
+        } else {
+            // Keep ffprobe only for non-WAV/legacy responses.
+            let p = tmp_path.clone();
+            let metadata = tokio::task::spawn_blocking(move || FfprobeInspector::probe(&p))
+                .await
+                .map_err(|e| DomainError::Internal(format!("Task error: {}", e)))??;
+            metadata.duration_ms
+        };
+
+        if duration_ms == 0 {
+            return Err(DomainError::PermanentApiError(
+                "Generated TTS audio has zero duration".to_string(),
+            ));
+        }
+
+        std::fs::rename(&tmp_path, output_path).map_err(|e| {
+            DomainError::Internal(format!("Failed to publish segment audio file: {}", e))
+        })?;
 
         Ok(SynthesizedSegment {
             segment_id: segment.segment_id.clone(),
             speaker_id: segment.speaker_id.clone(),
             path: output_path.to_path_buf(),
-            duration_ms: metadata.duration_ms,
+            duration_ms,
         })
     }
 }
@@ -458,5 +555,36 @@ impl SpeechSynthesizer for GeminiSynthesizer {
         }
         self.synthesize_segment(&dummy, &custom_voice, output_path)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GeminiSynthesizer;
+
+    #[test]
+    fn wav_duration_parser_handles_pcm_wav() {
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&36u32.to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&24000u32.to_le_bytes());
+        wav.extend_from_slice(&48000u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&48000u32.to_le_bytes());
+        wav.resize(44 + 48000, 0);
+
+        assert_eq!(GeminiSynthesizer::wav_duration_ms(&wav), Some(1000));
+    }
+
+    #[test]
+    fn wav_duration_parser_rejects_truncated_data() {
+        assert_eq!(GeminiSynthesizer::wav_duration_ms(b"RIFF"), None);
     }
 }

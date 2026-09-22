@@ -123,8 +123,7 @@ Transcript segments:
                 }
             ],
             "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.3
+                "responseMimeType": "application/json"
             }
         });
 
@@ -310,25 +309,51 @@ impl TextTranslator for GeminiTranslator {
         }
 
         // F5: O(1) lookup via HashMap instead of O(n²) find loop.
-        let map: std::collections::HashMap<String, String> = raw_translations
-            .into_iter()
-            .filter_map(|t| {
-                let txt = t.translated_text.trim().to_string();
-                if txt.is_empty() {
-                    None
-                } else {
-                    Some((t.segment_id, txt))
-                }
-            })
-            .collect();
+        let mut map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::with_capacity(raw_translations.len());
 
-        let mut translated_segments = Vec::new();
+        for item in raw_translations {
+            let segment_id = item.segment_id.trim().to_string();
+            let translated_text = item.translated_text.trim().to_string();
+
+            if segment_id.is_empty() || translated_text.is_empty() {
+                continue;
+            }
+
+            if map.insert(segment_id.clone(), translated_text).is_some() {
+                return Err(DomainError::PermanentApiError(format!(
+                    "Translation response contains duplicate segment_id '{}'",
+                    segment_id
+                )));
+            }
+        }
+
+        if map.len() != transcript.segments.len() {
+            return Err(DomainError::PermanentApiError(format!(
+                "Translation response is incomplete: expected {} segments, received {}",
+                transcript.segments.len(),
+                map.len()
+            )));
+        }
 
         for source_seg in &transcript.segments {
-            let translated_text = map
-                .get(&source_seg.id)
-                .cloned()
-                .unwrap_or_else(|| source_seg.text.clone());
+            if !map.contains_key(&source_seg.id) {
+                return Err(DomainError::PermanentApiError(format!(
+                    "Translation response is missing segment_id '{}'",
+                    source_seg.id
+                )));
+            }
+        }
+
+        let mut translated_segments = Vec::with_capacity(transcript.segments.len());
+
+        for source_seg in &transcript.segments {
+            let translated_text = map.get(&source_seg.id).cloned().ok_or_else(|| {
+                DomainError::PermanentApiError(format!(
+                    "Translation response is missing segment_id '{}'",
+                    source_seg.id
+                ))
+            })?;
 
             translated_segments.push(TranslationSegment {
                 segment_id: source_seg.id.clone(),

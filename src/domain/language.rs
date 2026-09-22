@@ -42,6 +42,24 @@ impl LanguageId {
             _ => "und",
         }
     }
+
+    /// Returns the BCP-47 locale expected by Gemini Transcribe language hints.
+    pub fn to_bcp47(&self) -> Option<&'static str> {
+        match self.0.as_str() {
+            "id" => Some("id-ID"),
+            "en" => Some("en-US"),
+            "ja" => Some("ja-JP"),
+            "ko" => Some("ko-KR"),
+            "es" => Some("es-ES"),
+            "jv" => Some("jv-ID"),
+            "ms" => Some("ms-MY"),
+            "vi" => Some("vi-VN"),
+            "zh" => Some("cmn-Hans-CN"),
+            "de" => Some("de-DE"),
+            "fr" => Some("fr-FR"),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for LanguageId {
@@ -158,7 +176,7 @@ impl LanguageRegistry {
             ),
             (
                 "zh",
-                "zh-CN",
+                "cmn-Hans-CN",
                 "Chinese (Mandarin)",
                 "中文",
                 true,

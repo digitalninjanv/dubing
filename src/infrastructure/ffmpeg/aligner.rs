@@ -82,7 +82,10 @@ impl FfmpegAligner {
         output_path: &Path,
         tempo: f64,
     ) -> Result<(), DomainError> {
-        // Clamp tempo between 0.75 and 1.50 for natural sounding speech without distortion
+        // 1.25x is the preferred natural range. The 1.50x hard ceiling keeps
+        // timeline synchronization deterministic when a provider returns an
+        // unexpectedly long utterance; callers surface a quality warning for
+        // larger corrections.
         let clamped_tempo = tempo.clamp(0.75, 1.50);
         let output = Command::new("ffmpeg")
             .arg("-y")
@@ -230,11 +233,17 @@ impl FfmpegAligner {
                         && plan.raw_duration_ms > (plan.target_slot_ms + 80)
                     {
                         let ratio = (plan.raw_duration_ms as f64) / (plan.target_slot_ms as f64);
+                        if ratio > 1.25 && ratio <= 1.50 {
+                            warning = Some(format!(
+                                "Segment {} required {:.2}x time-stretch; this exceeds the preferred 1.25x natural-speech range",
+                                plan.segment_id, ratio
+                            ));
+                        }
                         if ratio > 1.50 {
                             let new_duration =
                                 (plan.raw_duration_ms as f64 / 1.50).round() as u64;
                             warning = Some(format!(
-                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; clamped time-stretch to 1.50x (new duration: {}ms)",
+                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; preferred natural limit is 1.25x, hard-clamped to 1.50x (new duration: {}ms)",
                                 plan.segment_id, plan.raw_duration_ms, plan.target_slot_ms, ratio, new_duration
                             ));
                             Some(1.50)
