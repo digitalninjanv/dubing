@@ -505,6 +505,8 @@ impl PipelineOrchestrator {
             let synth = self.synthesizer.clone();
             let engine = self.audio_engine.clone();
             let cancel = cancel_token.clone();
+            let synthesis_manifest_for_task = synthesis_manifest.clone();
+            let artifact_store_for_task = artifact_store_for_tasks.clone();
 
             tasks.push(async move {
                 if cancel.is_cancelled() {
@@ -514,9 +516,10 @@ impl PipelineOrchestrator {
                 // Resume capability: reuse a checksum-verified artifact first.
                 // Legacy files are still accepted once and adopted into the manifest.
                 let tts_key = format!("synthesis/{idx:04}");
-                let has_manifest_record = synthesis_manifest.artifacts.contains_key(&tts_key);
+                let has_manifest_record =
+                    synthesis_manifest_for_task.artifacts.contains_key(&tts_key);
                 let cached_path = artifact_store_for_tasks
-                    .verify(&tts_key, &synthesis_manifest)
+                    .verify(&tts_key, &synthesis_manifest_for_task)
                     .ok()
                     .flatten();
 
