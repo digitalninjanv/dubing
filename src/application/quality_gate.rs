@@ -14,7 +14,7 @@ impl QualityGate {
         }
 
         let mut ids = HashSet::with_capacity(transcript.segments.len());
-        let mut previous_start = 0;
+        let mut previous_start = 0u64;
 
         for (index, segment) in transcript.segments.iter().enumerate() {
             if segment.id.trim().is_empty() {
