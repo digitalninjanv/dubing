@@ -27,7 +27,9 @@ impl AudioDubApp {
         app.connect_activate(move |application| {
             let registry = Arc::new(LanguageRegistry::standard());
             let secret_store = Arc::new(StandardSecretStore::new());
-            let audio_engine = Arc::new(FfmpegAudioEngine::with_concurrency(settings.runtime.ffmpeg_concurrency));
+            let audio_engine = Arc::new(FfmpegAudioEngine::with_concurrency(
+                settings.runtime.ffmpeg_concurrency,
+            ));
             let job_repo = Arc::new(FileJobRepository::new());
             let settings = settings.clone();
 
