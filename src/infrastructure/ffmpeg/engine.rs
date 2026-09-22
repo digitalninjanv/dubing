@@ -191,10 +191,8 @@ impl AudioEngine for FfmpegAudioEngine {
         let voice_in = voiceover_audio.to_path_buf();
         let out = output_audio.to_path_buf();
 
-        self.run_blocking(move || {
-            FfmpegExporter::mix_with_ducking(&bg_in, &voice_in, &out)
-        })
-        .await?
+        self.run_blocking(move || FfmpegExporter::mix_with_ducking(&bg_in, &voice_in, &out))
+            .await?
     }
 
     async fn extract_audio(
