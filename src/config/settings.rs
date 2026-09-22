@@ -209,6 +209,11 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    pub fn normalized(mut self) -> Self {
+        self.runtime = self.runtime.normalized();
+        self
+    }
+
     /// Load from `~/.config/audiodub/config.toml`; missing/corrupt file
     /// falls back to defaults (never fails startup).
     pub fn load() -> Self {
