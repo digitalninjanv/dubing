@@ -42,13 +42,30 @@ struct TranslationResponsePayload {
 pub struct GeminiTranslator {
     client: GeminiClient,
     model_name: String,
+    fallback_models: Vec<String>,
 }
 
 impl GeminiTranslator {
     pub fn new(client: GeminiClient, model_name: impl Into<String>) -> Self {
+        Self::new_with_fallbacks(
+            client,
+            model_name,
+            vec![
+                "gemini-3.5-flash-lite".to_string(),
+                "gemini-3.5-flash".to_string(),
+            ],
+        )
+    }
+
+    pub fn new_with_fallbacks(
+        client: GeminiClient,
+        model_name: impl Into<String>,
+        fallback_models: Vec<String>,
+    ) -> Self {
         Self {
             client,
             model_name: model_name.into(),
+            fallback_models,
         }
     }
 
@@ -133,8 +150,8 @@ Transcript segments:
 
         let http_client = self.client.http().clone();
         let mut candidates = vec![self.model_name.as_str()];
-        let fallbacks = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
-        for fb in fallbacks {
+        for fb in &self.fallback_models {
+            let fb = fb.as_str();
             if !candidates.contains(&fb) {
                 candidates.push(fb);
             }
