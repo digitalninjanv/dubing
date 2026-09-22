@@ -281,9 +281,6 @@ mod tests {
 
         let loaded = store.load().unwrap();
         assert_eq!(loaded, manifest);
-        assert_eq!(
-            store.verify("artifact", &loaded).unwrap(),
-            Some(path)
-        );
+        assert_eq!(store.verify("artifact", &loaded).unwrap(), Some(path));
     }
 }
