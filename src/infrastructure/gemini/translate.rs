@@ -123,8 +123,7 @@ Transcript segments:
                 }
             ],
             "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.3
+                "responseMimeType": "application/json"
             }
         });
 
