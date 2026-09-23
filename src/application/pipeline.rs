@@ -488,6 +488,7 @@ impl PipelineOrchestrator {
         }
 
         // 4. Speech Synthesis Stage (Utterance Chunking with Speaker Awareness)
+        // Provenance is part of cache identity so configuration changes regenerate audio.
         update_stage(
             &mut job,
             PipelineStage::Synthesizing,
