@@ -129,6 +129,19 @@ impl ModelRegistry {
             capabilities: ModelCapabilities::tts(),
         });
 
+        for (id, capabilities) in [
+            ("gpt-4o-transcribe", ModelCapabilities::transcription()),
+            ("gpt-4o-mini-transcribe", ModelCapabilities::transcription()),
+            ("gpt-5", ModelCapabilities::translation()),
+            ("gpt-4o-mini-tts", ModelCapabilities::tts()),
+        ] {
+            registry.register(ModelSpec {
+                provider: "openai".to_string(),
+                id: id.to_string(),
+                capabilities,
+            });
+        }
+
         registry
     }
 
