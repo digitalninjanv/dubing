@@ -768,14 +768,20 @@ impl PipelineOrchestrator {
         std::fs::create_dir_all(&output_dir).map_err(|e| {
             DomainError::ExportError(format!("Failed to create output directory: {}", e))
         })?;
+        let output_format = if self.audio_config.export_wav {
+            AudioFormat::Wav
+        } else {
+            AudioFormat::Mp3
+        };
         let output_file_name = format!(
-            "{}_{}.mp3",
+            "{}_{}.{}",
             job.source_audio
                 .path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("audio"),
-            job.target_language.as_str()
+            job.target_language.as_str(),
+            output_format.extension()
         );
         let final_output_path = output_dir.join(&output_file_name);
 
@@ -784,7 +790,7 @@ impl PipelineOrchestrator {
             .export_final(
                 &alignment_res.aligned_files,
                 &final_output_path,
-                AudioFormat::Mp3,
+                output_format,
                 self.audio_config.default_bitrate_kbps,
                 alignment_res.quality_warnings,
                 Some(source_duration_ms),
@@ -836,7 +842,7 @@ impl PipelineOrchestrator {
         // Audio Ducking (Smooth BGM attenuation)
         let mut audio_for_packaging = artifact.path.clone();
         if options.duck_audio {
-            let ducked_output = job_dir.join(format!("ducked_mix.{}", artifact.format.extension()));
+            let ducked_output = output_dir.join(format!("{}_{}_ducked.{}", file_stem, job.target_language.as_str(), artifact.format.extension()));
             match self
                 .audio_engine
                 .mix_with_ducking(&job.source_audio.path, &artifact.path, &ducked_output)
