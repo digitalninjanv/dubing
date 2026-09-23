@@ -273,4 +273,15 @@ mod runtime_tests {
         assert_eq!(config.translation_batch_size, 1);
         assert_eq!(config.ffmpeg_concurrency, 4);
     }
+
+    #[test]
+    fn defaults_include_resilient_current_model_fallbacks() {
+        let settings = super::AppSettings::default();
+        assert_eq!(settings.models.transcriber, "gemini-3.5-transcribe");
+        assert_eq!(settings.models.transcriber_fallbacks[0], "gemini-3.8-flash");
+        assert_eq!(settings.models.translator, "gemini-3.5-flash-lite");
+        assert_eq!(settings.models.translator_fallbacks[0], "gemini-3.8-flash");
+        assert_eq!(settings.models.tts_fallbacks[0], "gemini-2.5-flash-preview-tts");
+        assert_eq!(settings.models.tts_fallbacks[1], "gemini-2.5-pro-preview-tts");
+    }
 }
