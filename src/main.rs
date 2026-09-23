@@ -149,7 +149,8 @@ async fn run_translate_cli(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let secret_store = StandardSecretStore::new();
     let api_key = secret_store
         .get_api_key()?
-        .ok_or("Gemini API key not found. Set GEMINI_API_KEY environment variable or configure via GUI settings.")?;
+        .or_else(|| env::var("GEMINI_API_KEY").ok())
+        .unwrap_or_default();
 
     let registry = LanguageRegistry::standard();
     let source_id = LanguageId::new(&source_lang_str);
@@ -295,7 +296,8 @@ async fn run_batch_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>
     let secret_store = StandardSecretStore::new();
     let api_key = secret_store
         .get_api_key()?
-        .ok_or("Gemini API key not found.")?;
+        .or_else(|| env::var("GEMINI_API_KEY").ok())
+        .unwrap_or_default();
 
     let registry = LanguageRegistry::standard();
     let source_id = LanguageId::new(&source_lang_str);
@@ -449,18 +451,10 @@ async fn run_tts_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     let secret_store = StandardSecretStore::new();
-    let api_key = match secret_store.get_api_key() {
-        Ok(Some(k)) if !k.trim().is_empty() => k.trim().to_string(),
-        _ => match env::var("GEMINI_API_KEY") {
-            Ok(k) if !k.trim().is_empty() => k.trim().to_string(),
-            _ => {
-                return Err(
-                    "Gemini API key not found. Set GEMINI_API_KEY env or configure in GUI Settings."
-                        .into(),
-                );
-            }
-        },
-    };
+    let api_key = secret_store
+        .get_api_key()?
+        .or_else(|| env::var("GEMINI_API_KEY").ok())
+        .unwrap_or_default();
 
     println!("Starting Text-to-Speech synthesis...");
     println!("  Voice:  {}", voice_name);
