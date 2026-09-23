@@ -1,5 +1,5 @@
 use crate::domain::DomainError;
-use crate::infrastructure::filesystem::AppPaths;
+use crate::infrastructure::filesystem::{write_atomic, AppPaths};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,13 +241,7 @@ impl AppSettings {
         let normalized = self.clone().normalized();
         let content = toml::to_string_pretty(&normalized)
             .map_err(|e| DomainError::Internal(format!("Failed to serialize settings: {}", e)))?;
-        let tmp = path.with_extension("toml.tmp");
-        std::fs::write(&tmp, content).map_err(|e| {
-            DomainError::Internal(format!("Failed to write settings tmp file: {}", e))
-        })?;
-        std::fs::rename(&tmp, &path).map_err(|e| {
-            DomainError::Internal(format!("Failed to publish settings file: {}", e))
-        })?;
+        write_atomic(&path, content.as_bytes())?;
         Ok(())
     }
 }
