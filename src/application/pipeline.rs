@@ -349,7 +349,12 @@ impl PipelineOrchestrator {
                 "tone": &options.tone,
                 "provider": self.translator.cache_identity(),
             }))
-            .map_err(|e| DomainError::Internal(format!("Failed to fingerprint translation provenance: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!(
+                    "Failed to fingerprint translation provenance: {}",
+                    e
+                ))
+            })?;
 
             let translated_path = job_dir.join("translated.json");
             let data = serde_json::to_string_pretty(&tr)
@@ -584,7 +589,12 @@ impl PipelineOrchestrator {
                 "voice": &voice,
                 "provider": &synthesizer_identity,
             }))
-            .map_err(|e| DomainError::Internal(format!("Failed to fingerprint TTS provenance: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!(
+                    "Failed to fingerprint TTS provenance: {}",
+                    e
+                ))
+            })?;
 
             tasks.push(async move {
                 if cancel.is_cancelled() {
