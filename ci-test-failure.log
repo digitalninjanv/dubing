@@ -1,22 +1,22 @@
 [1m[92m   Compiling[0m audiodub v0.6.0 (/home/runner/work/dubing/dubing)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 11.25s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 12.25s
 [1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/audiodub-ca6ae7735513124a)
 
 running 22 tests
 test application::quality_gate::tests::accepts_consistent_transcript ... ok
 test application::quality_gate::tests::rejects_duplicate_transcript_ids ... ok
-test application::quality_gate::tests::rejects_mismatched_translation_timing ... ok
 test application::quality_gate::tests::rejects_translation_with_missing_segment ... ok
+test application::quality_gate::tests::rejects_mismatched_translation_timing ... ok
 test config::settings::runtime_tests::runtime_limits_never_allow_zero_or_unbounded_values ... ok
-test domain::subtitle::tests::test_format_timestamps ... ok
 test domain::batch::tests::test_batch_job_creation_and_counts ... ok
+test domain::subtitle::tests::test_format_timestamps ... ok
 test domain::subtitle::tests::test_generate_srt_and_vtt ... ok
 test infrastructure::ffmpeg::engine::tests::zero_concurrency_is_clamped_to_one ... ok
 test infrastructure::filesystem::artifacts::tests::invalidate_prefix_removes_dependent_artifacts_only ... ok
 test infrastructure::filesystem::artifacts::tests::missing_manifest_is_safe_to_start_from_scratch ... ok
 test infrastructure::filesystem::artifacts::tests::legacy_artifact_without_provenance_is_not_reused_when_expected ... ok
-test infrastructure::filesystem::artifacts::tests::manifest_persists_and_reloads ... ok
 test infrastructure::filesystem::artifacts::tests::provenance_mismatch_invalidates_artifact ... ok
+test infrastructure::filesystem::artifacts::tests::manifest_persists_and_reloads ... ok
 test infrastructure::gemini::tts::tests::wav_duration_parser_rejects_truncated_data ... ok
 test infrastructure::providers::model_registry::tests::known_model_must_match_pipeline_role ... ok
 test infrastructure::providers::model_registry::tests::unknown_models_are_allowed_for_forward_compatibility ... ok
@@ -26,7 +26,7 @@ test infrastructure::filesystem::artifacts::tests::register_and_verify_artifact 
 test infrastructure::providers::tests::default_provider_configuration_is_buildable ... ok
 test infrastructure::filesystem::artifacts::tests::checksum_mismatch_invalidates_artifact ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
 
 [1m[92m     Running[0m unittests src/main.rs (target/debug/deps/audiodub-3e8856a321b681c8)
 
@@ -37,103 +37,103 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 [1m[92m     Running[0m tests/integration/audio_engine_test.rs (target/debug/deps/audio_engine_test-4ac73a314ad013cd)
 
 running 6 tests
-ffmpeg version 6.1.1-3ubuntu5ffmpeg version 6.1.1-3ubuntu5ffmpeg version 6.1.1-3ubuntu5ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers Copyright (c) 2000-2023 the FFmpeg developers Copyright (c) 2000-2023 the FFmpeg developers Copyright (c) 2000-2023 the FFmpeg developers
-
-
+ffmpeg version 6.1.1-3ubuntu5ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers Copyright (c) 2000-2023 the FFmpeg developers
 
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
+  configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
+  configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
+  libavutil      58. 29.100 / 58. 29.100
+  libavcodec     60. 31.102 / 60. 31.102
+  libavutil      58. 29.100 / 58. 29.100
+  libavformat    60. 16.100 / 60. 16.100
+  libavcodec     60. 31.102 / 60. 31.102
+  libavdevice    60.  3.100 / 60.  3.100
+  libavformat    60. 16.100 / 60. 16.100
+  libavfilter     9. 12.100 /  9. 12.100
+  libavdevice    60.  3.100 / 60.  3.100
+  libswscale      7.  5.100 /  7.  5.100
+  libavfilter     9. 12.100 /  9. 12.100
+  libswresample   4. 12.100 /  4. 12.100
+  libswscale      7.  5.100 /  7.  5.100
+  libpostproc    57.  3.100 / 57.  3.100
+  libswresample   4. 12.100 /  4. 12.100
+  libpostproc    57.  3.100 / 57.  3.100
+ffmpeg version 6.1.1-3ubuntu5ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers Copyright (c) 2000-2023 the FFmpeg developers
+
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
-  configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
-  configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
+  libavutil      58. 29.100 / 58. 29.100
   libavutil      58. 29.100 / 58. 29.100
   libavcodec     60. 31.102 / 60. 31.102
+  libavcodec     60. 31.102 / 60. 31.102
+  libavformat    60. 16.100 / 60. 16.100
   libavformat    60. 16.100 / 60. 16.100
   libavdevice    60.  3.100 / 60.  3.100
-  libavutil      58. 29.100 / 58. 29.100
-  libavutil      58. 29.100 / 58. 29.100
+  libavdevice    60.  3.100 / 60.  3.100
   libavfilter     9. 12.100 /  9. 12.100
-  libavcodec     60. 31.102 / 60. 31.102
-  libavcodec     60. 31.102 / 60. 31.102
+  libavfilter     9. 12.100 /  9. 12.100
   libswscale      7.  5.100 /  7.  5.100
-  libavutil      58. 29.100 / 58. 29.100
-  libavformat    60. 16.100 / 60. 16.100
-  libavformat    60. 16.100 / 60. 16.100
+  libswscale      7.  5.100 /  7.  5.100
   libswresample   4. 12.100 /  4. 12.100
-  libavcodec     60. 31.102 / 60. 31.102
-  libavdevice    60.  3.100 / 60.  3.100
-  libavdevice    60.  3.100 / 60.  3.100
+  libswresample   4. 12.100 /  4. 12.100
   libpostproc    57.  3.100 / 57.  3.100
-  libavformat    60. 16.100 / 60. 16.100
-  libavfilter     9. 12.100 /  9. 12.100
-  libavfilter     9. 12.100 /  9. 12.100
-  libavdevice    60.  3.100 / 60.  3.100
-  libswscale      7.  5.100 /  7.  5.100
-  libswscale      7.  5.100 /  7.  5.100
-  libavfilter     9. 12.100 /  9. 12.100
-  libswresample   4. 12.100 /  4. 12.100
-  libswresample   4. 12.100 /  4. 12.100
-  libswscale      7.  5.100 /  7.  5.100
-  libpostproc    57.  3.100 / 57.  3.100
-  libpostproc    57.  3.100 / 57.  3.100
-  libswresample   4. 12.100 /  4. 12.100
   libpostproc    57.  3.100 / 57.  3.100
 Input #0, lavfi, from 'sine=frequency=440:duration=4':
+  Duration: N/A, start: 0.000000, bitrate: 705 kb/s
 Input #0, lavfi, from 'sine=frequency=220:duration=2':
 Input #0, lavfi, from 'sine=frequency=440:duration=1':
-  Duration:   Duration:   Duration: N/AN/A, start: , start: N/A0.0000000.000000, start: , bitrate: , bitrate: 705 kb/s0.000000705 kb/s
-, bitrate: 
-705 kb/s
-  Stream #0:0  Stream #0:0  Stream #0:0: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s
+  Duration:   Duration: N/AN/A  Stream #0:0, start: , start: : Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s0.0000000.000000
+, bitrate: , bitrate: 705 kb/s705 kb/s
 
+  Stream #0:0: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s  Stream #0:0
+: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (pcm_s16le (native) -> mp3 (libmp3lame))Input #0, lavfi, from 'testsrc=duration=2:size=320x240:rate=30':
 
+  Duration: Press [q] to stop, [?] for help
+N/A, start: 0.000000, bitrate: N/A
 Stream mapping:
 Stream mapping:
+  Stream #0:0 -> #0:0  Stream #0:0  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native)): Video: wrapped_avframe, rgb24, 320x240 [SAR 1:1 DAR 4:3] (pcm_s16le (native) -> mp3 (libmp3lame))
+, 
+Press [q] to stop, [?] for help
+Press [q] to stop, [?] for help
+30 fps, 30 tbr, 30 tbn
+Input #1, lavfi, from 'sine=frequency=440:duration=2':
+  Duration: N/A, start: 0.000000, bitrate: 705 kb/s
+  Stream #1:0: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s
 Stream mapping:
-  Stream #0:0 -> #0:0  Stream #0:0 -> #0:0  Stream #0:0 -> #0:0 (pcm_s16le (native) -> mp3 (libmp3lame)) (pcm_s16le (native) -> mp3 (libmp3lame))
- (pcm_s16le (native) -> pcm_s16le (native))
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (libx264))
+  Stream #1:0 -> #0:1 (pcm_s16le (native) -> aac (native))
 Press [q] to stop, [?] for help
+Output #0, mp3, to '/tmp/.tmpML5mFp/original_4s.mp3':
+  Metadata:
+    TSSE            : Lavf60.16.100Output #0, mp3, to '/tmp/.tmptxwYkU/sample.mp3':
 
-Press [q] to stop, [?] for help
-Press [q] to stop, [?] for help
-Input #0, lavfi, from 'testsrc=duration=2:size=320x240:rate=30':
-  Duration: N/A, start: 0.000000, bitrate: N/A
-  Stream #0:0: Video: wrapped_avframe, rgb24, 320x240 [SAR 1:1 DAR 4:3], 30 fps, 30 tbr, 30 tbn
-Output #0, wav, to '/tmp/.tmpsd0SGd/background.wav':
+  Metadata:
+    TSSE            : Lavf60.16.100
+  Stream #0:0: Audio: mp3, 44100 Hz, mono, s16p, 128 kb/s
+    Metadata:
+  Stream #0:0      encoder         : : Audio: mp3, 44100 Hz, mono, s16p, 128 kb/sLavc60.31.102 libmp3lame
+
+    Metadata:
+      encoder         : Lavc60.31.102 libmp3lame
+size=       0kB time=N/A bitrate=N/A speed=N/A    size=       0kB time=N/A bitrate=N/A speed=N/A    Output #0, wav, to '/tmp/.tmpj9nUZ5/background.wav':
   Metadata:
     ISFT            : Lavf60.16.100
   Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
     Metadata:
       encoder         : Lavc60.31.102 pcm_s16le
-size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    Input #1, lavfi, from 'sine=frequency=440:duration=2':
-  Duration: N/A, start: 0.000000, bitrate: 705 kb/s
-  Stream #1:0: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s
-Output #0, mp3, to '/tmp/.tmp8UcMmq/sample.mp3':
-  Metadata:
-    TSSE            : Lavf60.16.100
-Stream mapping:
-  Stream #0:0  Stream #0:0 -> #0:0: Audio: mp3, 44100 Hz, mono, s16p, 128 kb/s
- (wrapped_avframe (native) -> h264 (libx264))    Metadata:
-
-      encoder         :   Stream #1:0 -> #0:1Lavc60.31.102 libmp3lame (pcm_s16le (native) -> aac (native))
-
-Press [q] to stop, [?] for help
-size=       0kB time=N/A bitrate=N/A speed=N/A    Output #0, mp3, to '/tmp/.tmpNsFwRg/original_4s.mp3':
-  Metadata:
-    TSSE            : Lavf60.16.100
-  Stream #0:0: Audio: mp3, 44100 Hz, mono, s16p, 128 kb/s
-    Metadata:
-      encoder         : Lavc60.31.102 libmp3lame
-size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/wav @ 0x558142c05480] video:0kB audio:172kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.044218%
-size=     172kB time=00:00:01.99 bitrate= 707.0kbits/s speed= 293x    
-[libx264 @ 0x555ced7ef4c0] using SAR=1/1
-[libx264 @ 0x555ced7ef4c0] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
-[libx264 @ 0x555ced7ef4c0] profile High, level 1.3, 4:2:0, 8-bit
-[libx264 @ 0x555ced7ef4c0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=25 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
-Output #0, mp4, to '/tmp/.tmpMeLHbf/test_video.mp4':
+size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [libx264 @ 0x56113713c4c0] using SAR=1/1
+[libx264 @ 0x56113713c4c0] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x56113713c4c0] profile High, level 1.3, 4:2:0, 8-bit
+[libx264 @ 0x56113713c4c0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=25 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+[out#0/wav @ 0x55ea4a858480] video:0kB audio:172kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.044218%
+size=     172kB time=00:00:01.99 bitrate= 707.0kbits/s speed= 251x    
+Output #0, mp4, to '/tmp/.tmp14rwyC/test_video.mp4':
   Metadata:
     encoder         : Lavf60.16.100
   Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 320x240 [SAR 1:1 DAR 4:3], q=2-31, 30 fps, 15360 tbn
@@ -144,10 +144,10 @@ Output #0, mp4, to '/tmp/.tmpMeLHbf/test_video.mp4':
   Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 69 kb/s
     Metadata:
       encoder         : Lavc60.31.102 aac
-frame=    0 fps=0.0 q=0.0 size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x55ee26cc6500] video:0kB audio:16kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 2.763488%
-size=      17kB time=00:00:00.99 bitrate= 138.3kbits/s speed=80.8x    
-[out#0/mp3 @ 0x563de5974500] video:0kB audio:63kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.713150%
-size=      64kB time=00:00:03.99 bitrate= 130.6kbits/s speed=  89x    
+frame=    0 fps=0.0 q=0.0 size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x55ec082e2500] video:0kB audio:16kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 2.763488%
+size=      17kB time=00:00:00.99 bitrate= 138.3kbits/s speed=79.1x    
+[out#0/mp3 @ 0x5615bf033500] video:0kB audio:63kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.713150%
+size=      64kB time=00:00:03.99 bitrate= 130.6kbits/s speed=95.9x    
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -159,20 +159,6 @@ ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   libswscale      7.  5.100 /  7.  5.100
   libswresample   4. 12.100 /  4. 12.100
   libpostproc    57.  3.100 / 57.  3.100
-Input #0, lavfi, from 'sine=frequency=880:duration=1':
-  Duration: N/A, start: 0.000000, bitrate: 705 kb/s
-  Stream #0:0: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s
-Stream mapping:
-  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
-Press [q] to stop, [?] for help
-Output #0, wav, to '/tmp/.tmpsd0SGd/voice.wav':
-  Metadata:
-    ISFT            : Lavf60.16.100
-  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
-    Metadata:
-      encoder         : Lavc60.31.102 pcm_s16le
-size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55a71efb7480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
-size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed=93.7x    
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -190,35 +176,49 @@ Input #0, lavfi, from 'sine=frequency=520:duration=6':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
 Press [q] to stop, [?] for help
-Output #0, wav, to '/tmp/.tmpNsFwRg/synth_6s.wav':
+Input #0, lavfi, from 'sine=frequency=880:duration=1':
+  Duration: N/A, start: 0.000000, bitrate: 705 kb/s
+  Stream #0:0: Audio: pcm_s16le, 44100 Hz, mono, s16, 705 kb/s
+Output #0, wav, to '/tmp/.tmpML5mFp/synth_6s.wav':
   Metadata:
     ISFT            : Lavf60.16.100
   Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
     Metadata:
       encoder         : Lavc60.31.102 pcm_s16le
-size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55f637e33480] video:0kB audio:517kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.014739%
-size=     517kB time=00:00:05.99 bitrate= 706.8kbits/s speed= 451x    
-[out#0/mp4 @ 0x555ced7edcc0] video:11kB audio:17kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 12.388742%
-frame=   60 fps=0.0 q=-1.0 Lsize=      32kB time=00:00:01.99 bitrate= 131.0kbits/s speed=  12x    
-[libx264 @ 0x555ced7ef4c0] frame I:1     Avg QP:16.26  size:  3212
-[libx264 @ 0x555ced7ef4c0] frame P:16    Avg QP:15.40  size:   371
-[libx264 @ 0x555ced7ef4c0] frame B:43    Avg QP:14.69  size:    39
-[libx264 @ 0x555ced7ef4c0] consecutive B-frames:  3.3%  3.3%  0.0% 93.3%
-[libx264 @ 0x555ced7ef4c0] mb I  I16..4: 68.3%  6.7% 25.0%
-[libx264 @ 0x555ced7ef4c0] mb P  I16..4:  2.2%  1.0%  0.2%  P16..4:  8.8%  3.2%  2.1%  0.0%  0.0%    skip:82.4%
-[libx264 @ 0x555ced7ef4c0] mb B  I16..4:  0.3%  0.0%  0.0%  B16..8:  3.3%  0.1%  0.0%  direct: 0.0%  skip:96.3%  L0:41.6% L1:53.5% BI: 4.9%
-[libx264 @ 0x555ced7ef4c0] 8x8 transform intra:13.9% inter:35.6%
-[libx264 @ 0x555ced7ef4c0] coded y,uvDC,uvAC intra: 10.2% 32.5% 20.2% inter: 0.7% 2.1% 1.5%
-[libx264 @ 0x555ced7ef4c0] i16 v,h,dc,p: 76%  8%  6% 11%
-[libx264 @ 0x555ced7ef4c0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 40% 10% 49%  0%  0%  0%  0%  0%  0%
-[libx264 @ 0x555ced7ef4c0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 45% 30% 17%  2%  2%  2%  0%  2%  0%
-[libx264 @ 0x555ced7ef4c0] i8c dc,h,v,p: 34% 17% 41%  8%
-[libx264 @ 0x555ced7ef4c0] Weighted P-Frames: Y:0.0% UV:0.0%
-[libx264 @ 0x555ced7ef4c0] ref P L0: 79.0%  5.2% 13.1%  2.7%
-[libx264 @ 0x555ced7ef4c0] ref B L0: 59.9% 34.7%  5.5%
-[libx264 @ 0x555ced7ef4c0] ref B L1: 98.0%  2.0%
-[libx264 @ 0x555ced7ef4c0] kb/s:43.22
-[aac @ 0x555ced7f2900] Qavg: 850.013
+size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    Stream mapping:
+  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
+Press [q] to stop, [?] for help
+Output #0, wav, to '/tmp/.tmpj9nUZ5/voice.wav':
+  Metadata:
+    ISFT            : Lavf60.16.100
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
+    Metadata:
+      encoder         : Lavc60.31.102 pcm_s16le
+size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55d564ba9480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
+size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 101x    
+[out#0/wav @ 0x55647ae16480] video:0kB audio:517kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.014739%
+size=     517kB time=00:00:05.99 bitrate= 706.8kbits/s speed= 273x    
+[out#0/mp4 @ 0x56113713acc0] video:11kB audio:17kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 12.388742%
+frame=   60 fps=0.0 q=-1.0 Lsize=      32kB time=00:00:01.99 bitrate= 131.0kbits/s speed=10.9x    
+[libx264 @ 0x56113713c4c0] frame I:1     Avg QP:16.26  size:  3212
+[libx264 @ 0x56113713c4c0] frame P:16    Avg QP:15.40  size:   371
+[libx264 @ 0x56113713c4c0] frame B:43    Avg QP:14.69  size:    39
+[libx264 @ 0x56113713c4c0] consecutive B-frames:  3.3%  3.3%  0.0% 93.3%
+[libx264 @ 0x56113713c4c0] mb I  I16..4: 68.3%  6.7% 25.0%
+[libx264 @ 0x56113713c4c0] mb P  I16..4:  2.2%  1.0%  0.2%  P16..4:  8.8%  3.2%  2.1%  0.0%  0.0%    skip:82.4%
+[libx264 @ 0x56113713c4c0] mb B  I16..4:  0.3%  0.0%  0.0%  B16..8:  3.3%  0.1%  0.0%  direct: 0.0%  skip:96.3%  L0:41.6% L1:53.5% BI: 4.9%
+[libx264 @ 0x56113713c4c0] 8x8 transform intra:13.9% inter:35.6%
+[libx264 @ 0x56113713c4c0] coded y,uvDC,uvAC intra: 10.2% 32.5% 20.2% inter: 0.7% 2.1% 1.5%
+[libx264 @ 0x56113713c4c0] i16 v,h,dc,p: 76%  8%  6% 11%
+[libx264 @ 0x56113713c4c0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 40% 10% 49%  0%  0%  0%  0%  0%  0%
+[libx264 @ 0x56113713c4c0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 45% 30% 17%  2%  2%  2%  0%  2%  0%
+[libx264 @ 0x56113713c4c0] i8c dc,h,v,p: 34% 17% 41%  8%
+[libx264 @ 0x56113713c4c0] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x56113713c4c0] ref P L0: 79.0%  5.2% 13.1%  2.7%
+[libx264 @ 0x56113713c4c0] ref B L0: 59.9% 34.7%  5.5%
+[libx264 @ 0x56113713c4c0] ref B L1: 98.0%  2.0%
+[libx264 @ 0x56113713c4c0] kb/s:43.22
+[aac @ 0x56113713f900] Qavg: 850.013
 test test_ffmpeg_mix_with_ducking ... ok
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
@@ -241,11 +241,11 @@ Stream mapping:
   Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (libx264))
   Stream #1:0 -> #0:1 (pcm_s16le (native) -> aac (native))
 Press [q] to stop, [?] for help
-[libx264 @ 0x5583d4a644c0] using SAR=1/1
-[libx264 @ 0x5583d4a644c0] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
-[libx264 @ 0x5583d4a644c0] profile High, level 1.3, 4:2:0, 8-bit
-[libx264 @ 0x5583d4a644c0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=25 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
-Output #0, mp4, to '/tmp/.tmpV7TM26/input_video.mp4':
+[libx264 @ 0x55611c8f14c0] using SAR=1/1
+[libx264 @ 0x55611c8f14c0] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x55611c8f14c0] profile High, level 1.3, 4:2:0, 8-bit
+[libx264 @ 0x55611c8f14c0] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=25 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+Output #0, mp4, to '/tmp/.tmpjgzrlp/input_video.mp4':
   Metadata:
     encoder         : Lavf60.16.100
   Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 320x240 [SAR 1:1 DAR 4:3], q=2-31, 30 fps, 15360 tbn
@@ -274,11 +274,11 @@ Input #0, lavfi, from 'testsrc=duration=1:size=320x240:rate=10':
 Stream mapping:
   Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (libx264))
 Press [q] to stop, [?] for help
-[libx264 @ 0x563f4b6e2440] using SAR=1/1
-[libx264 @ 0x563f4b6e2440] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
-[libx264 @ 0x563f4b6e2440] profile High, level 1.2, 4:2:0, 8-bit
-[libx264 @ 0x563f4b6e2440] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=10 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
-Output #0, mp4, to '/tmp/.tmpizJsxk/source_video.mp4':
+[libx264 @ 0x55ef28686440] using SAR=1/1
+[libx264 @ 0x55ef28686440] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x55ef28686440] profile High, level 1.2, 4:2:0, 8-bit
+[libx264 @ 0x55ef28686440] 264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=6 lookahead_threads=1 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=10 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+Output #0, mp4, to '/tmp/.tmpeW9UCS/source_video.mp4':
   Metadata:
     encoder         : Lavf60.16.100
   Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(tv, progressive), 320x240 [SAR 1:1 DAR 4:3], q=2-31, 10 fps, 10240 tbn
@@ -287,47 +287,48 @@ Output #0, mp4, to '/tmp/.tmpizJsxk/source_video.mp4':
     Side data:
       cpb: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
 frame=    0 fps=0.0 q=0.0 size=       0kB time=N/A bitrate=N/A speed=N/A    test test_ffmpeg_probe_and_export ... ok
-[out#0/mp4 @ 0x563f4b6e0c00] video:6kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 15.660377%
-frame=   10 fps=0.0 q=-1.0 Lsize=       7kB time=00:00:00.70 bitrate=  84.1kbits/s speed=22.3x    
-[libx264 @ 0x563f4b6e2440] frame I:1     Avg QP:13.70  size:  3309
-[libx264 @ 0x563f4b6e2440] frame P:3     Avg QP:17.05  size:   557
-[libx264 @ 0x563f4b6e2440] frame B:6     Avg QP:14.00  size:   115
-[libx264 @ 0x563f4b6e2440] consecutive B-frames: 20.0%  0.0%  0.0% 80.0%
-[libx264 @ 0x563f4b6e2440] mb I  I16..4: 69.0%  4.7% 26.3%
-[libx264 @ 0x563f4b6e2440] mb P  I16..4:  3.1%  1.3%  1.6%  P16..4:  7.7%  2.7%  2.3%  0.0%  0.0%    skip:81.3%
-[libx264 @ 0x563f4b6e2440] mb B  I16..4:  1.1%  0.3%  0.0%  B16..8:  6.1%  0.9%  0.1%  direct: 0.7%  skip:90.8%  L0:48.8% L1:44.9% BI: 6.2%
-[libx264 @ 0x563f4b6e2440] 8x8 transform intra:8.4% inter:23.1%
-[libx264 @ 0x563f4b6e2440] coded y,uvDC,uvAC intra: 13.9% 40.4% 26.1% inter: 1.4% 4.0% 1.9%
-[libx264 @ 0x563f4b6e2440] i16 v,h,dc,p: 77%  7%  7%  9%
-[libx264 @ 0x563f4b6e2440] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 87%  4%  8%  2%  0%  0%  0%  0%  0%
-[libx264 @ 0x563f4b6e2440] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 47% 29% 16%  2%  1%  2%  0%  2%  0%
-[libx264 @ 0x563f4b6e2440] i8c dc,h,v,p: 37% 19% 37%  7%
-[libx264 @ 0x563f4b6e2440] Weighted P-Frames: Y:0.0% UV:0.0%
-[libx264 @ 0x563f4b6e2440] ref P L0: 81.1%  8.6% 10.3%
-[libx264 @ 0x563f4b6e2440] ref B L0: 86.2%  9.7%  4.1%
-[libx264 @ 0x563f4b6e2440] ref B L1: 97.0%  3.0%
-[libx264 @ 0x563f4b6e2440] kb/s:45.37
-[out#0/mp4 @ 0x5583d4a62cc0] video:11kB audio:17kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 12.388742%
-frame=   60 fps=0.0 q=-1.0 Lsize=      32kB time=00:00:01.99 bitrate= 131.0kbits/s speed=11.4x    
-[libx264 @ 0x5583d4a644c0] frame I:1     Avg QP:16.26  size:  3212
-[libx264 @ 0x5583d4a644c0] frame P:16    Avg QP:15.40  size:   371
-[libx264 @ 0x5583d4a644c0] frame B:43    Avg QP:14.69  size:    39
-[libx264 @ 0x5583d4a644c0] consecutive B-frames:  3.3%  3.3%  0.0% 93.3%
-[libx264 @ 0x5583d4a644c0] mb I  I16..4: 68.3%  6.7% 25.0%
-[libx264 @ 0x5583d4a644c0] mb P  I16..4:  2.2%  1.0%  0.2%  P16..4:  8.8%  3.2%  2.1%  0.0%  0.0%    skip:82.4%
-[libx264 @ 0x5583d4a644c0] mb B  I16..4:  0.3%  0.0%  0.0%  B16..8:  3.3%  0.1%  0.0%  direct: 0.0%  skip:96.3%  L0:41.6% L1:53.5% BI: 4.9%
-[libx264 @ 0x5583d4a644c0] 8x8 transform intra:13.9% inter:35.6%
-[libx264 @ 0x5583d4a644c0] coded y,uvDC,uvAC intra: 10.2% 32.5% 20.2% inter: 0.7% 2.1% 1.5%
-[libx264 @ 0x5583d4a644c0] i16 v,h,dc,p: 76%  8%  6% 11%
-[libx264 @ 0x5583d4a644c0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 40% 10% 49%  0%  0%  0%  0%  0%  0%
-[libx264 @ 0x5583d4a644c0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 45% 30% 17%  2%  2%  2%  0%  2%  0%
-[libx264 @ 0x5583d4a644c0] i8c dc,h,v,p: 34% 17% 41%  8%
-[libx264 @ 0x5583d4a644c0] Weighted P-Frames: Y:0.0% UV:0.0%
-[libx264 @ 0x5583d4a644c0] ref P L0: 79.0%  5.2% 13.1%  2.7%
-[libx264 @ 0x5583d4a644c0] ref B L0: 59.9% 34.7%  5.5%
-[libx264 @ 0x5583d4a644c0] ref B L1: 98.0%  2.0%
-[libx264 @ 0x5583d4a644c0] kb/s:43.22
-[aac @ 0x5583d4a67900] Qavg: 850.013
+[out#0/mp4 @ 0x55ef28684c00] video:6kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 15.660377%
+frame=   10 fps=0.0 q=-1.0 Lsize=       7kB time=00:00:00.70 bitrate=  84.1kbits/s speed=  16x    
+[libx264 @ 0x55ef28686440] frame I:1     Avg QP:13.70  size:  3309
+[libx264 @ 0x55ef28686440] frame P:3     Avg QP:17.05  size:   557
+[libx264 @ 0x55ef28686440] frame B:6     Avg QP:14.00  size:   115
+[libx264 @ 0x55ef28686440] consecutive B-frames: 20.0%  0.0%  0.0% 80.0%
+[libx264 @ 0x55ef28686440] mb I  I16..4: 69.0%  4.7% 26.3%
+[libx264 @ 0x55ef28686440] mb P  I16..4:  3.1%  1.3%  1.6%  P16..4:  7.7%  2.7%  2.3%  0.0%  0.0%    skip:81.3%
+[libx264 @ 0x55ef28686440] mb B  I16..4:  1.1%  0.3%  0.0%  B16..8:  6.1%  0.9%  0.1%  direct: 0.7%  skip:90.8%  L0:48.8% L1:44.9% BI: 6.2%
+[libx264 @ 0x55ef28686440] 8x8 transform intra:8.4% inter:23.1%
+[libx264 @ 0x55ef28686440] coded y,uvDC,uvAC intra: 13.9% 40.4% 26.1% inter: 1.4% 4.0% 1.9%
+[libx264 @ 0x55ef28686440] i16 v,h,dc,p: 77%  7%  7%  9%
+[libx264 @ 0x55ef28686440] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 87%  4%  8%  2%  0%  0%  0%  0%  0%
+[libx264 @ 0x55ef28686440] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 47% 29% 16%  2%  1%  2%  0%  2%  0%
+[libx264 @ 0x55ef28686440] i8c dc,h,v,p: 37% 19% 37%  7%
+[libx264 @ 0x55ef28686440] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x55ef28686440] ref P L0: 81.1%  8.6% 10.3%
+[libx264 @ 0x55ef28686440] ref B L0: 86.2%  9.7%  4.1%
+[libx264 @ 0x55ef28686440] ref B L1: 97.0%  3.0%
+[libx264 @ 0x55ef28686440] kb/s:45.37
+[out#0/mp4 @ 0x55611c8efcc0] video:11kB audio:17kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 12.388742%
+frame=   60 fps=0.0 q=-1.0 Lsize=      32kB time=00:00:01.99 bitrate= 131.0kbits/s speed=10.4x    
+[libx264 @ 0x55611c8f14c0] frame I:1     Avg QP:16.26  size:  3212
+[libx264 @ 0x55611c8f14c0] frame P:16    Avg QP:15.40  size:   371
+[libx264 @ 0x55611c8f14c0] frame B:43    Avg QP:14.69  size:    39
+[libx264 @ 0x55611c8f14c0] consecutive B-frames:  3.3%  3.3%  0.0% 93.3%
+[libx264 @ 0x55611c8f14c0] mb I  I16..4: 68.3%  6.7% 25.0%
+[libx264 @ 0x55611c8f14c0] mb P  I16..4:  2.2%  1.0%  0.2%  P16..4:  8.8%  3.2%  2.1%  0.0%  0.0%    skip:82.4%
+[libx264 @ 0x55611c8f14c0] mb B  I16..4:  0.3%  0.0%  0.0%  B16..8:  3.3%  0.1%  0.0%  direct: 0.0%  skip:96.3%  L0:41.6% L1:53.5% BI: 4.9%
+[libx264 @ 0x55611c8f14c0] 8x8 transform intra:13.9% inter:35.6%
+[libx264 @ 0x55611c8f14c0] coded y,uvDC,uvAC intra: 10.2% 32.5% 20.2% inter: 0.7% 2.1% 1.5%
+[libx264 @ 0x55611c8f14c0] i16 v,h,dc,p: 76%  8%  6% 11%
+[libx264 @ 0x55611c8f14c0] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 40% 10% 49%  0%  0%  0%  0%  0%  0%
+[libx264 @ 0x55611c8f14c0] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 45% 30% 17%  2%  2%  2%  0%  2%  0%
+[libx264 @ 0x55611c8f14c0] i8c dc,h,v,p: 34% 17% 41%  8%
+[libx264 @ 0x55611c8f14c0] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x55611c8f14c0] ref P L0: 79.0%  5.2% 13.1%  2.7%
+[libx264 @ 0x55611c8f14c0] ref B L0: 59.9% 34.7%  5.5%
+[libx264 @ 0x55611c8f14c0] ref B L1: 98.0%  2.0%
+[libx264 @ 0x55611c8f14c0] kb/s:43.22
+[aac @ 0x55611c8f4900] Qavg: 850.013
+test test_duration_sync_enforcement_4_seconds ... ok
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -345,15 +346,14 @@ Input #0, lavfi, from 'sine=frequency=440:duration=1':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> mp3 (libmp3lame))
 Press [q] to stop, [?] for help
-Output #0, mp3, to '/tmp/.tmpizJsxk/dubbed_audio.mp3':
+Output #0, mp3, to '/tmp/.tmpeW9UCS/dubbed_audio.mp3':
   Metadata:
     TSSE            : Lavf60.16.100
   Stream #0:0: Audio: mp3, 44100 Hz, mono, s16p, 128 kb/s
     Metadata:
       encoder         : Lavc60.31.102 libmp3lame
-size=       0kB time=N/A bitrate=N/A speed=N/A    test test_duration_sync_enforcement_4_seconds ... ok
-[out#0/mp3 @ 0x55ea83103500] video:0kB audio:16kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 2.763488%
-size=      17kB time=00:00:00.99 bitrate= 138.3kbits/s speed=91.5x    
+size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x56164b22a500] video:0kB audio:16kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 2.763488%
+size=      17kB time=00:00:00.99 bitrate= 138.3kbits/s speed= 116x    
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -371,18 +371,18 @@ Input #0, lavfi, from 'sine=frequency=500:duration=2':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> mp3 (libmp3lame))
 Press [q] to stop, [?] for help
-Output #0, mp3, to '/tmp/.tmpV7TM26/dubbed.mp3':
+Output #0, mp3, to '/tmp/.tmpjgzrlp/dubbed.mp3':
   Metadata:
     TSSE            : Lavf60.16.100
   Stream #0:0: Audio: mp3, 44100 Hz, mono, s16p
     Metadata:
       encoder         : Lavc60.31.102 libmp3lame
-size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x556448266480] video:0kB audio:16kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 1.392638%
-size=      16kB time=00:00:01.98 bitrate=  66.6kbits/s speed= 147x    
+size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x55bef9ff2480] video:0kB audio:16kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 1.392638%
+size=      16kB time=00:00:01.98 bitrate=  66.6kbits/s speed= 140x    
 test test_ffmpeg_video_remuxing ... ok
 test test_ffmpeg_video_remux_with_soft_subtitles ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
 
 [1m[92m     Running[0m tests/integration/crash_recovery_test.rs (target/debug/deps/crash_recovery_test-0ebcdab4a7773a2a)
 
@@ -404,14 +404,14 @@ Input #0, lavfi, from 'sine=frequency=440:duration=2':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> mp3 (libmp3lame))
 Press [q] to stop, [?] for help
-Output #0, mp3, to '/tmp/.tmpvCVMqu/crash_test.mp3':
+Output #0, mp3, to '/tmp/.tmpyytXoc/crash_test.mp3':
   Metadata:
     TSSE            : Lavf60.16.100
   Stream #0:0: Audio: mp3, 44100 Hz, mono, s16p, 128 kb/s
     Metadata:
       encoder         : Lavc60.31.102 libmp3lame
-size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x561da9864500] video:0kB audio:32kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 1.417178%
-size=      32kB time=00:00:01.98 bitrate= 133.2kbits/s speed= 134x    
+size=       0kB time=N/A bitrate=N/A speed=N/A    [out#0/mp3 @ 0x5610f9a58500] video:0kB audio:32kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 1.417178%
+size=      32kB time=00:00:01.98 bitrate= 133.2kbits/s speed= 129x    
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -429,14 +429,14 @@ Input #0, lavfi, from 'sine=frequency=440:duration=1':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
 Press [q] to stop, [?] for help
-Output #0, wav, to '/home/runner/.local/share/audiodub/jobs/job_20260923_004554_f512791b/seg_0001.wav':
+Output #0, wav, to '/home/runner/.local/share/audiodub/jobs/job_20260923_004624_f3c14ab8/seg_0001.wav':
   Metadata:
     ISFT            : Lavf60.16.100
   Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
     Metadata:
       encoder         : Lavc60.31.102 pcm_s16le
-size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55e208683480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
-size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 466x    
+size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x5654379f6480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
+size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 364x    
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -454,14 +454,14 @@ Input #0, lavfi, from 'sine=frequency=440:duration=1':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
 Press [q] to stop, [?] for help
-Output #0, wav, to '/home/runner/.local/share/audiodub/jobs/job_20260923_004554_f512791b/seg_0001.wav':
+Output #0, wav, to '/home/runner/.local/share/audiodub/jobs/job_20260923_004624_f3c14ab8/seg_0001.wav':
   Metadata:
     ISFT            : Lavf60.16.100
   Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
     Metadata:
       encoder         : Lavc60.31.102 pcm_s16le
-size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55947ced5480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
-size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 435x    
+size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55654ddef480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
+size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 367x    
 ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
   built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
   configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libglslang --enable-libgme --enable-libgsm --enable-libharfbuzz --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzimg --enable-openal --enable-opencl --enable-opengl --disable-sndio --enable-libvpl --disable-libmfx --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-ladspa --enable-libbluray --enable-libjack --enable-libpulse --enable-librabbitmq --enable-librist --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libx264 --enable-libzmq --enable-libzvbi --enable-lv2 --enable-sdl2 --enable-libplacebo --enable-librav1e --enable-pocketsphinx --enable-librsvg --enable-libjxl --enable-shared
@@ -479,21 +479,21 @@ Input #0, lavfi, from 'sine=frequency=440:duration=1':
 Stream mapping:
   Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
 Press [q] to stop, [?] for help
-Output #0, wav, to '/home/runner/.local/share/audiodub/jobs/job_20260923_004554_f512791b/seg_0002.wav':
+Output #0, wav, to '/home/runner/.local/share/audiodub/jobs/job_20260923_004624_f3c14ab8/seg_0002.wav':
   Metadata:
     ISFT            : Lavf60.16.100
   Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, mono, s16, 705 kb/s
     Metadata:
       encoder         : Lavc60.31.102 pcm_s16le
-size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x5606fe0c1480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
-size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 426x    
+size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A    [out#0/wav @ 0x55cb7ffc3480] video:0kB audio:86kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.088435%
+size=      86kB time=00:00:00.99 bitrate= 707.3kbits/s speed= 406x    
 test test_crash_recovery_resumes_without_duplication ... FAILED
 
 failures:
 
 ---- test_crash_recovery_resumes_without_duplication stdout ----
 
-thread 'test_crash_recovery_resumes_without_duplication' (5333) panicked at tests/integration/crash_recovery_test.rs:187:5:
+thread 'test_crash_recovery_resumes_without_duplication' (5335) panicked at tests/integration/crash_recovery_test.rs:187:5:
 assertion `left == right` failed: Expected exactly 1 synthesis call for the remaining segment, but got 2
   left: 2
  right: 1
@@ -503,6 +503,6 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 failures:
     test_crash_recovery_resumes_without_duplication
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
 
 [1m[91merror[0m: test failed, to rerun pass `--test crash_recovery_test`
