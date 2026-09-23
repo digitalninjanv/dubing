@@ -46,6 +46,33 @@ impl QualityGate {
                     segment.id
                 )));
             }
+
+            let mut previous_word_end = segment.start_ms;
+            for word in &segment.words {
+                if word.word.trim().is_empty() {
+                    return Err(Self::fail(format!(
+                        "Transcript segment '{}' contains an empty word timestamp",
+                        segment.id
+                    )));
+                }
+                if word.start_ms < segment.start_ms
+                    || word.end_ms > segment.end_ms
+                    || word.start_ms >= word.end_ms
+                {
+                    return Err(Self::fail(format!(
+                        "Transcript segment '{}' contains an out-of-range word timestamp {}..{}",
+                        segment.id, word.start_ms, word.end_ms
+                    )));
+                }
+                if word.start_ms < previous_word_end {
+                    return Err(Self::fail(format!(
+                        "Transcript segment '{}' contains unordered word timestamps",
+                        segment.id
+                    )));
+                }
+                previous_word_end = word.end_ms;
+            }
+
             previous_start = segment.start_ms;
         }
 
@@ -314,5 +341,36 @@ mod tests {
         value.segments[1].source_end_ms = 2100;
 
         assert!(QualityGate::validate_translation(&transcript(), &value).is_err());
+    }
+
+    #[test]
+    fn rejects_word_timestamp_outside_segment() {
+        let mut value = transcript();
+        value.segments[0].words.push(crate::domain::WordTimestamp {
+            word: "Hello".to_string(),
+            start_ms: 0,
+            end_ms: 1200,
+        });
+
+        assert!(QualityGate::validate_transcript(&value).is_err());
+    }
+
+    #[test]
+    fn rejects_unordered_word_timestamps() {
+        let mut value = transcript();
+        value.segments[0].words = vec![
+            crate::domain::WordTimestamp {
+                word: "Hello".to_string(),
+                start_ms: 100,
+                end_ms: 500,
+            },
+            crate::domain::WordTimestamp {
+                word: "again".to_string(),
+                start_ms: 400,
+                end_ms: 900,
+            },
+        ];
+
+        assert!(QualityGate::validate_transcript(&value).is_err());
     }
 }

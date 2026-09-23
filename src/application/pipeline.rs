@@ -762,23 +762,35 @@ impl PipelineOrchestrator {
         self.job_repo.save(&job).await?;
         on_progress(&job);
 
+        // Keep each job in its own output directory. This prevents two source files
+        // with the same basename (or repeated runs) from overwriting each other.
+        let output_dir = AppPaths::outputs_dir().join(job.id.as_str());
+        std::fs::create_dir_all(&output_dir).map_err(|e| {
+            DomainError::ExportError(format!("Failed to create output directory: {}", e))
+        })?;
+        let output_format = if self.audio_config.export_wav {
+            AudioFormat::Wav
+        } else {
+            AudioFormat::Mp3
+        };
         let output_file_name = format!(
-            "{}_{}.mp3",
+            "{}_{}.{}",
             job.source_audio
                 .path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("audio"),
-            job.target_language.as_str()
+            job.target_language.as_str(),
+            output_format.extension()
         );
-        let final_output_path = AppPaths::outputs_dir().join(&output_file_name);
+        let final_output_path = output_dir.join(&output_file_name);
 
         let mut artifact = self
             .audio_engine
             .export_final(
                 &alignment_res.aligned_files,
                 &final_output_path,
-                AudioFormat::Mp3,
+                output_format,
                 self.audio_config.default_bitrate_kbps,
                 alignment_res.quality_warnings,
                 Some(source_duration_ms),
@@ -787,7 +799,9 @@ impl PipelineOrchestrator {
 
         let t_export = t_export_start.elapsed();
 
-        // Generate Subtitle artifacts (.srt, .vtt, bilingual .txt)
+        // Subtitle export is opt-in. When enabled, failures are fatal rather than
+        // silently producing a partial artifact set; writes are atomic so a crash
+        // cannot leave a truncated subtitle file behind.
         let file_stem = job
             .source_audio
             .path
@@ -795,36 +809,45 @@ impl PipelineOrchestrator {
             .and_then(|s| s.to_str())
             .unwrap_or("audio");
 
-        let srt_path = AppPaths::outputs_dir().join(format!(
-            "{}_{}.srt",
-            file_stem,
-            job.target_language.as_str()
-        ));
-        let vtt_path = AppPaths::outputs_dir().join(format!(
-            "{}_{}.vtt",
-            file_stem,
-            job.target_language.as_str()
-        ));
-        let txt_path = AppPaths::outputs_dir().join(format!(
-            "{}_{}_bilingual.txt",
-            file_stem,
-            job.target_language.as_str()
-        ));
+        if options.export_subtitles {
+            let srt_path = output_dir.join(format!(
+                "{}_{}.srt",
+                file_stem,
+                job.target_language.as_str()
+            ));
+            let vtt_path = output_dir.join(format!(
+                "{}_{}.vtt",
+                file_stem,
+                job.target_language.as_str()
+            ));
+            let txt_path = output_dir.join(format!(
+                "{}_{}_bilingual.txt",
+                file_stem,
+                job.target_language.as_str()
+            ));
 
-        if let Ok(()) = std::fs::write(&srt_path, generate_srt(&translated)) {
+            let srt = generate_srt(&translated);
+            write_atomic(&srt_path, srt.as_bytes())?;
             artifact.subtitle_srt_path = Some(srt_path);
-        }
-        if let Ok(()) = std::fs::write(&vtt_path, generate_vtt(&translated)) {
+
+            let vtt = generate_vtt(&translated);
+            write_atomic(&vtt_path, vtt.as_bytes())?;
             artifact.subtitle_vtt_path = Some(vtt_path);
-        }
-        if let Ok(()) = std::fs::write(&txt_path, generate_bilingual_txt(&translated)) {
+
+            let txt = generate_bilingual_txt(&translated);
+            write_atomic(&txt_path, txt.as_bytes())?;
             artifact.transcript_txt_path = Some(txt_path);
         }
 
         // Audio Ducking (Smooth BGM attenuation)
         let mut audio_for_packaging = artifact.path.clone();
         if options.duck_audio {
-            let ducked_output = job_dir.join(format!("ducked_mix.{}", artifact.format.extension()));
+            let ducked_output = output_dir.join(format!(
+                "{}_{}_ducked.{}",
+                file_stem,
+                job.target_language.as_str(),
+                artifact.format.extension()
+            ));
             match self
                 .audio_engine
                 .mix_with_ducking(&job.source_audio.path, &artifact.path, &ducked_output)
@@ -849,7 +872,7 @@ impl PipelineOrchestrator {
         // Fast video remuxing with soft subtitles if source input is video container
         if job.source_audio.format.is_video() {
             let ext = job.source_audio.format.extension();
-            let remuxed_video_path = AppPaths::outputs_dir().join(format!(
+            let remuxed_video_path = output_dir.join(format!(
                 "{}_{}_dubbed.{}",
                 file_stem,
                 job.target_language.as_str(),

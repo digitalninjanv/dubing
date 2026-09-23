@@ -187,7 +187,20 @@ impl FfmpegAligner {
                 .or_else(|| source_timeline.get(idx));
 
             let (start_ms, end_ms) = if let Some(src) = source_seg {
-                (src.start_ms, src.end_ms)
+                // Prefer word-level boundaries when the transcriber supplied them.
+                // This preserves natural pauses around an utterance instead of
+                // forcing TTS to occupy the entire coarse segment window.
+                if let (Some(first), Some(last)) = (src.words.first(), src.words.last()) {
+                    let start = first.start_ms.max(src.start_ms).min(src.end_ms);
+                    let end = last.end_ms.max(start).min(src.end_ms);
+                    if end > start {
+                        (start, end)
+                    } else {
+                        (src.start_ms, src.end_ms)
+                    }
+                } else {
+                    (src.start_ms, src.end_ms)
+                }
             } else {
                 (0, synth_seg.duration_ms)
             };
