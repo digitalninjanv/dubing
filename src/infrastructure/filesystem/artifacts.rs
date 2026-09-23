@@ -262,10 +262,7 @@ fn write_atomic(path: &Path, content: &str) -> Result<(), DomainError> {
         ))
     })?;
     std::fs::rename(&tmp, path).map_err(|e| {
-        DomainError::Internal(format!(
-            "Failed to publish artifact manifest: {}",
-            e
-        ))
+        DomainError::Internal(format!("Failed to publish artifact manifest: {}", e))
     })?;
     Ok(())
 }
@@ -283,9 +280,7 @@ mod tests {
 
         let store = ArtifactStore::new(dir.path());
         let mut manifest = ArtifactManifest::default();
-        store
-            .register("transcript", &path, &mut manifest)
-            .unwrap();
+        store.register("transcript", &path, &mut manifest).unwrap();
 
         assert_eq!(
             store.verify("transcript", &manifest).unwrap(),
@@ -383,10 +378,7 @@ mod tests {
 
         std::fs::write(&path, b"tampered").unwrap();
 
-        assert_eq!(
-            store.verify("transcript", &manifest).unwrap(),
-            None
-        );
+        assert_eq!(store.verify("transcript", &manifest).unwrap(), None);
     }
 
     #[test]
