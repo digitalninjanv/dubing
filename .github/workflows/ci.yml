@@ -50,8 +50,9 @@ jobs:
         continue-on-error: true
         run: |
           cargo test --all-targets --all-features > /tmp/cargo-test.log 2>&1
+          status=$?
           cat /tmp/cargo-test.log
-          exit ${PIPESTATUS[0]}
+          exit $status
       - name: Persist test diagnostics
         if: steps.tests.outcome == 'failure'
         env:
