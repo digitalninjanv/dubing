@@ -5,7 +5,9 @@ use std::path::Path;
 #[async_trait]
 pub trait SpeechSynthesizer: Send + Sync {
     /// Stable non-secret identity of the synthesis implementation and model candidates.
-    fn cache_identity(&self) -> String { "unknown-synthesizer".to_string() }
+    fn cache_identity(&self) -> String {
+        "unknown-synthesizer".to_string()
+    }
     async fn synthesize_segment(
         &self,
         segment: &TranslationSegment,
