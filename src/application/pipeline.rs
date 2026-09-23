@@ -9,7 +9,7 @@ use crate::domain::{
     TranslatedDocument, TranslationTone, VoiceProfile,
 };
 use crate::infrastructure::filesystem::{
-    fingerprint, AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
+    fingerprint, write_atomic, AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
     PROVENANCE_SCHEMA_VERSION,
 };
 use futures::stream::{self, StreamExt};
@@ -56,17 +56,6 @@ pub struct PipelineOptions {
     pub duck_audio: bool,
     pub review_transcript: bool,
     pub review_channel: Option<async_channel::Sender<ReviewRequest>>,
-}
-
-/// Atomically persists a small JSON manifest (write .tmp + rename) so a
-/// crash can never leave a half-written transcript/translation behind.
-fn write_manifest_atomic(path: &std::path::Path, data: &str) -> Result<(), DomainError> {
-    let tmp_path = path.with_extension("json.tmp");
-    std::fs::write(&tmp_path, data)
-        .map_err(|e| DomainError::Internal(format!("Failed to write manifest tmp file: {}", e)))?;
-    std::fs::rename(&tmp_path, path)
-        .map_err(|e| DomainError::Internal(format!("Failed to publish manifest file: {}", e)))?;
-    Ok(())
 }
 
 pub struct PipelineOrchestrator {
@@ -303,7 +292,7 @@ impl PipelineOrchestrator {
             let transcript_path = job_dir.join("transcript.json");
             let data = serde_json::to_string_pretty(&t)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
-            write_manifest_atomic(&transcript_path, &data)?;
+            write_atomic(&transcript_path, data.as_bytes())?;
 
             t
         } else {
@@ -359,7 +348,7 @@ impl PipelineOrchestrator {
             let translated_path = job_dir.join("translated.json");
             let data = serde_json::to_string_pretty(&tr)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
-            write_manifest_atomic(&translated_path, &data)?;
+            write_atomic(&translated_path, data.as_bytes())?;
             artifact_store.register_with_provenance(
                 "translation",
                 &translated_path,
@@ -442,7 +431,7 @@ impl PipelineOrchestrator {
                                     e
                                 ))
                             })?;
-                            write_manifest_atomic(&translated_path, &data)?;
+                            write_atomic(&translated_path, data.as_bytes())?;
                             let translation_provenance = fingerprint(&serde_json::json!({
                                 "schema": PROVENANCE_SCHEMA_VERSION,
                                 "stage": "translation",

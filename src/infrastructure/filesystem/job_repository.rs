@@ -1,9 +1,9 @@
 use super::paths::AppPaths;
+use super::write_atomic;
 use crate::application::ports::JobRepository;
 use crate::domain::{DomainError, Job, JobId};
 use async_trait::async_trait;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::PathBuf;
 
 pub struct FileJobRepository {
@@ -41,24 +41,10 @@ impl JobRepository for FileJobRepository {
             .map_err(|e| DomainError::Internal(format!("Failed to create job dir: {}", e)))?;
 
         let final_path = job_dir.join("job.json");
-        let tmp_path = job_dir.join("job.json.tmp");
-
         let json_data = serde_json::to_vec_pretty(job)
             .map_err(|e| DomainError::Internal(format!("Failed to serialize job: {}", e)))?;
 
-        // Atomic write: write to .tmp, fsync, then rename
-        let mut file = File::create(&tmp_path)
-            .map_err(|e| DomainError::Internal(format!("Failed to create tmp job file: {}", e)))?;
-        file.write_all(&json_data)
-            .map_err(|e| DomainError::Internal(format!("Failed to write tmp job file: {}", e)))?;
-        file.sync_all()
-            .map_err(|e| DomainError::Internal(format!("Failed to fsync tmp job file: {}", e)))?;
-        drop(file);
-
-        fs::rename(&tmp_path, &final_path).map_err(|e| {
-            DomainError::Internal(format!("Failed to atomically rename job file: {}", e))
-        })?;
-
+        write_atomic(&final_path, &json_data)?;
         Ok(())
     }
 
