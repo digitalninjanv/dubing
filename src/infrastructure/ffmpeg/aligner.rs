@@ -203,8 +203,8 @@ impl FfmpegAligner {
             });
         }
 
-        // 2. Parallel processing with bounded concurrency (F3: avoid 100
-        // threads + 100 ffmpeg processes on large jobs).
+        // 2. Process each segment within the engine-level FFmpeg limiter.
+        // The limiter bounds all blocking FFmpeg work across the application.
         struct ProcessedSegment {
             path: std::path::PathBuf,
             duration_ms: u64,
