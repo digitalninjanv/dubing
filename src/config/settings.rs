@@ -217,6 +217,72 @@ impl Default for AppSettings {
 impl AppSettings {
     pub fn normalized(mut self) -> Self {
         self.runtime = self.runtime.normalized();
+
+        fn sync_models(provider: &str, models: &mut ModelsConfig) {
+            if provider.eq_ignore_ascii_case("openai") {
+                if models.transcriber.starts_with("gemini-") {
+                    models.transcriber = "gpt-4o-transcribe".to_string();
+                }
+                if models.translator.starts_with("gemini-") {
+                    models.translator = "gpt-5".to_string();
+                }
+                if models.tts.starts_with("gemini-") {
+                    models.tts = "gpt-4o-mini-tts".to_string();
+                }
+                if models
+                    .transcriber_fallbacks
+                    .iter()
+                    .all(|m| m.starts_with("gemini-"))
+                {
+                    models.transcriber_fallbacks = vec!["gpt-4o-mini-transcribe".to_string()];
+                }
+                if models
+                    .translator_fallbacks
+                    .iter()
+                    .all(|m| m.starts_with("gemini-"))
+                {
+                    models.translator_fallbacks = vec!["gpt-5".to_string()];
+                }
+                if models
+                    .tts_fallbacks
+                    .iter()
+                    .all(|m| m.starts_with("gemini-"))
+                {
+                    models.tts_fallbacks = vec!["gpt-4o-mini-tts".to_string()];
+                }
+            } else if provider.eq_ignore_ascii_case("gemini") {
+                if models.transcriber.starts_with("gpt-") {
+                    models.transcriber = default_transcriber_model();
+                }
+                if models.translator.starts_with("gpt-") {
+                    models.translator = default_translator_model();
+                }
+                if models.tts.starts_with("gpt-") {
+                    models.tts = default_tts_model();
+                }
+                if models
+                    .transcriber_fallbacks
+                    .iter()
+                    .any(|m| m.starts_with("gpt-"))
+                {
+                    models.transcriber_fallbacks = default_transcriber_fallbacks();
+                }
+                if models
+                    .translator_fallbacks
+                    .iter()
+                    .any(|m| m.starts_with("gpt-"))
+                {
+                    models.translator_fallbacks = default_translator_fallbacks();
+                }
+                if models.tts_fallbacks.iter().any(|m| m.starts_with("gpt-")) {
+                    models.tts_fallbacks = default_tts_fallbacks();
+                }
+            }
+        }
+
+        sync_models(&self.providers.transcriber, &mut self.models);
+        sync_models(&self.providers.translator, &mut self.models);
+        sync_models(&self.providers.tts, &mut self.models);
         self
     }
 
@@ -272,6 +338,44 @@ mod runtime_tests {
         assert_eq!(config.translation_concurrency, 8);
         assert_eq!(config.translation_batch_size, 1);
         assert_eq!(config.ffmpeg_concurrency, 4);
+    }
+
+    #[test]
+    fn switching_to_openai_normalizes_gemini_defaults() {
+        let mut settings = super::AppSettings::default();
+        settings.providers.transcriber = "openai".to_string();
+        settings.providers.translator = "openai".to_string();
+        settings.providers.tts = "openai".to_string();
+
+        let normalized = settings.normalized();
+        assert_eq!(normalized.models.transcriber, "gpt-4o-transcribe");
+        assert_eq!(normalized.models.translator, "gpt-5");
+        assert_eq!(normalized.models.tts, "gpt-4o-mini-tts");
+        assert_eq!(
+            normalized.models.transcriber_fallbacks,
+            vec!["gpt-4o-mini-transcribe"]
+        );
+    }
+
+    #[test]
+    fn switching_back_to_gemini_restores_gemini_fallbacks() {
+        let mut settings = super::AppSettings::default();
+        settings.providers.transcriber = "openai".to_string();
+        settings.providers.translator = "openai".to_string();
+        settings.providers.tts = "openai".to_string();
+        settings = settings.normalized();
+        settings.providers.transcriber = "gemini".to_string();
+        settings.providers.translator = "gemini".to_string();
+        settings.providers.tts = "gemini".to_string();
+
+        let normalized = settings.normalized();
+        assert_eq!(normalized.models.transcriber, "gemini-3.5-transcribe");
+        assert_eq!(normalized.models.translator, "gemini-3.5-flash-lite");
+        assert_eq!(normalized.models.tts, "gemini-3.1-flash-tts-preview");
+        assert_eq!(
+            normalized.models.translator_fallbacks,
+            super::default_translator_fallbacks()
+        );
     }
 
     #[test]

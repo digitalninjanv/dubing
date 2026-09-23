@@ -285,21 +285,36 @@ impl MainWindow {
         let win_weak_exec = window.downgrade();
 
         dropzone_view.connect_translate_clicked(move || {
-            let api_key = match secret_store_exec.get_api_key() {
-                Ok(Some(k)) if !k.trim().is_empty() => k.trim().to_string(),
-                _ => {
-                    let toast =
-                        libadwaita::Toast::new("Please configure your Gemini API Key in Settings");
-                    toast_exec.add_toast(toast);
-                    if let Some(win) = win_weak_exec.upgrade() {
-                        SettingsDialog::show(
-                            &win,
-                            secret_store_exec.clone(),
-                            settings_exec.clone(),
+            let needs_gemini = settings_exec
+                .providers
+                .transcriber
+                .eq_ignore_ascii_case("gemini")
+                || settings_exec
+                    .providers
+                    .translator
+                    .eq_ignore_ascii_case("gemini")
+                || settings_exec.providers.tts.eq_ignore_ascii_case("gemini");
+
+            let api_key = if needs_gemini {
+                match secret_store_exec.get_api_key() {
+                    Ok(Some(k)) if !k.trim().is_empty() => k.trim().to_string(),
+                    _ => {
+                        let toast = libadwaita::Toast::new(
+                            "Configure the Gemini API key in Settings or GEMINI_API_KEY",
                         );
+                        toast_exec.add_toast(toast);
+                        if let Some(win) = win_weak_exec.upgrade() {
+                            SettingsDialog::show(
+                                &win,
+                                secret_store_exec.clone(),
+                                settings_exec.clone(),
+                            );
+                        }
+                        return;
                     }
-                    return;
                 }
+            } else {
+                std::env::var("GEMINI_API_KEY").unwrap_or_default()
             };
 
             let input_path = match dropzone_exec.selected_path() {

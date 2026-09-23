@@ -22,7 +22,98 @@ impl SettingsDialog {
         page.set_title("General");
         page.set_icon_name(Some("preferences-system-symbolic"));
 
-        // 1. AI API Key Group
+        // 1. Provider routing
+        let provider_group = libadwaita::PreferencesGroup::new();
+        provider_group.set_title("AI Providers");
+        provider_group.set_description(Some(
+            "Each pipeline stage can use a different provider. OpenAI credentials are read from OPENAI_API_KEY.",
+        ));
+
+        let provider_values = gtk4::StringList::new(&["Gemini", "OpenAI"]);
+        let transcriber_provider = libadwaita::ComboRow::new();
+        transcriber_provider.set_title("Transcription Provider");
+        transcriber_provider.set_model(Some(&provider_values));
+        transcriber_provider.set_selected(
+            if settings
+                .providers
+                .transcriber
+                .eq_ignore_ascii_case("openai")
+            {
+                1
+            } else {
+                0
+            },
+        );
+
+        let translator_provider = libadwaita::ComboRow::new();
+        translator_provider.set_title("Translation Provider");
+        translator_provider.set_model(Some(&provider_values));
+        translator_provider.set_selected(
+            if settings.providers.translator.eq_ignore_ascii_case("openai") {
+                1
+            } else {
+                0
+            },
+        );
+
+        let tts_provider = libadwaita::ComboRow::new();
+        tts_provider.set_title("TTS Provider");
+        tts_provider.set_model(Some(&provider_values));
+        tts_provider.set_selected(if settings.providers.tts.eq_ignore_ascii_case("openai") {
+            1
+        } else {
+            0
+        });
+
+        provider_group.add(&transcriber_provider);
+        provider_group.add(&translator_provider);
+        provider_group.add(&tts_provider);
+
+        let persist_providers = std::rc::Rc::new({
+            let transcriber_provider = transcriber_provider.clone();
+            let translator_provider = translator_provider.clone();
+            let tts_provider = tts_provider.clone();
+            move || {
+                let mut s = AppSettings::load();
+                s.providers.transcriber = if transcriber_provider.selected() == 1 {
+                    "openai"
+                } else {
+                    "gemini"
+                }
+                .to_string();
+                s.providers.translator = if translator_provider.selected() == 1 {
+                    "openai"
+                } else {
+                    "gemini"
+                }
+                .to_string();
+                s.providers.tts = if tts_provider.selected() == 1 {
+                    "openai"
+                } else {
+                    "gemini"
+                }
+                .to_string();
+                if let Err(e) = s.save() {
+                    tracing::warn!("Failed to persist provider settings: {}", e);
+                }
+            }
+        });
+        {
+            let persist = persist_providers.clone();
+            transcriber_provider.connect_selected_notify(move |_| persist());
+        }
+        {
+            let persist = persist_providers.clone();
+            translator_provider.connect_selected_notify(move |_| persist());
+        }
+        {
+            let persist = persist_providers.clone();
+            tts_provider.connect_selected_notify(move |_| persist());
+        }
+
+        page.add(&provider_group);
+
+        // 2. AI API Key Group
         let api_group = libadwaita::PreferencesGroup::new();
         api_group.set_title("Google Gemini API");
         api_group.set_description(Some(
@@ -109,7 +200,7 @@ impl SettingsDialog {
         api_group.add(&test_row);
         page.add(&api_group);
 
-        // 2. Audio Preferences Group
+        // 3. Audio Preferences Group
         let audio_group = libadwaita::PreferencesGroup::new();
         audio_group.set_title("Audio Output");
 
@@ -174,7 +265,7 @@ impl SettingsDialog {
 
         page.add(&audio_group);
 
-        // 3. Runtime Resource Controls
+        // 4. Runtime Resource Controls
         let runtime_group = libadwaita::PreferencesGroup::new();
         runtime_group.set_title("Performance & API Limits");
         runtime_group.set_description(Some(
@@ -269,13 +360,13 @@ impl SettingsDialog {
 
         page.add(&runtime_group);
 
-        // 4. Privacy & Compliance Group (PRD SEC-005)
+        // 5. Privacy & Compliance Group (PRD SEC-005)
         let privacy_group = libadwaita::PreferencesGroup::new();
         privacy_group.set_title("Privacy & Data Usage");
         privacy_group.set_description(Some(
-            "Audio submitted for transcription, translation, and voice synthesis is processed via Google Gemini APIs. \
-            Ensure you have the necessary rights or authorization for the audio materials you upload. AudioDub AI does not \
-            store your audio on external servers beyond temporary API processing windows (up to 48 hours for Gemini File API)."
+            "Audio is sent to the selected AI providers for transcription, translation, and voice synthesis. \
+            Configure only providers you are authorized to use. Local speech/background separation, when enabled, \
+            runs through the optional Demucs installation on this machine."
         ));
         page.add(&privacy_group);
 

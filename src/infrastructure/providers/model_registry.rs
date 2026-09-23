@@ -129,6 +129,19 @@ impl ModelRegistry {
             capabilities: ModelCapabilities::tts(),
         });
 
+        for (id, capabilities) in [
+            ("gpt-4o-transcribe", ModelCapabilities::transcription()),
+            ("gpt-4o-mini-transcribe", ModelCapabilities::transcription()),
+            ("gpt-5", ModelCapabilities::translation()),
+            ("gpt-4o-mini-tts", ModelCapabilities::tts()),
+        ] {
+            registry.register(ModelSpec {
+                provider: "openai".to_string(),
+                id: id.to_string(),
+                capabilities,
+            });
+        }
+
         registry
     }
 
@@ -208,6 +221,23 @@ mod tests {
             };
             assert!(registry.validate("gemini", model, role).is_ok(), "{model}");
         }
+    }
+
+    #[test]
+    fn known_openai_models_match_pipeline_roles() {
+        let registry = ModelRegistry::standard();
+        assert!(registry
+            .validate("openai", "gpt-4o-transcribe", ModelRole::Transcription)
+            .is_ok());
+        assert!(registry
+            .validate("openai", "gpt-5", ModelRole::Translation)
+            .is_ok());
+        assert!(registry
+            .validate("openai", "gpt-4o-mini-tts", ModelRole::Tts)
+            .is_ok());
+        assert!(registry
+            .validate("openai", "gpt-4o-mini-tts", ModelRole::Transcription)
+            .is_err());
     }
 
     #[test]

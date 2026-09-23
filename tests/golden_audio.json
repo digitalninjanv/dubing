@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "synthetic_voice_like",
+      "duration_ms": 2000,
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "max_duration_error_ms": 150,
+      "min_output_bytes": 1000
+    },
+    {
+      "name": "synthetic_background_like",
+      "duration_ms": 3000,
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "max_duration_error_ms": 150,
+      "min_output_bytes": 1000
+    }
+  ]
+}

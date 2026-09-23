@@ -180,6 +180,17 @@ impl AudioEngine for FfmpegAudioEngine {
         .await
     }
 
+    async fn separate_background(
+        &self,
+        source_audio: &Path,
+        output_dir: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        let source = source_audio.to_path_buf();
+        let dir = output_dir.to_path_buf();
+        self.run_blocking(move || FfmpegExporter::separate_background(&source, &dir))
+            .await
+    }
+
     async fn mix_with_ducking(
         &self,
         background_audio: &Path,

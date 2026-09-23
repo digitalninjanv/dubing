@@ -70,3 +70,7 @@ path = "tests/integration/real_workflow_test.rs"
 [[test]]
 name = "performance_benchmark"
 path = "tests/integration/performance_benchmark.rs"
+
+[[test]]
+name = "golden_audio_test"
+path = "tests/integration/golden_audio_test.rs"
