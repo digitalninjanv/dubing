@@ -215,7 +215,12 @@ mod tests {
     use super::FfmpegAudioEngine;
 
     #[test]
-    fn zero_concurrency_is_clamped_to_one() {
+    fn zero_concurrency_is_accepted_without_panicking() {
         let _engine = FfmpegAudioEngine::with_concurrency(0);
+    }
+
+    #[test]
+    fn configured_concurrency_is_accepted_without_panicking() {
+        let _engine = FfmpegAudioEngine::with_concurrency(3);
     }
 }

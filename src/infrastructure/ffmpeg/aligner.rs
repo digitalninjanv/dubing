@@ -203,8 +203,8 @@ impl FfmpegAligner {
             });
         }
 
-        // 2. Parallel processing with bounded concurrency (F3: avoid 100
-        // threads + 100 ffmpeg processes on large jobs).
+        // 2. Process each segment within the engine-level FFmpeg limiter.
+        // The limiter bounds all blocking FFmpeg work across the application.
         struct ProcessedSegment {
             path: std::path::PathBuf,
             duration_ms: u64,
@@ -213,74 +213,51 @@ impl FfmpegAligner {
             segment_id: String,
         }
 
-        let max_parallel = std::thread::available_parallelism()
-            .map(|n| (n.get() * 2).clamp(4, 8))
-            .unwrap_or(4);
-
-        // F3: bounded parallelism via chunked scope — avoids 100 threads +
-        // 100 ffmpeg processes on large jobs, without needing an async semaphore
-        // inside a sync thread::scope.
+        // Alignment runs inside the engine-level FFmpeg semaphore. Keep this
+        // stage sequential so one alignment task cannot multiply the global
+        // subprocess limit with a nested worker pool.
         let mut processed: Vec<Result<ProcessedSegment, DomainError>> =
             Vec::with_capacity(plans.len());
-        for chunk in plans.chunks(max_parallel) {
-            let chunk_results: Vec<Result<ProcessedSegment, DomainError>> = std::thread::scope(
-                |s| {
-                    let mut handles = Vec::with_capacity(chunk.len());
-                    for plan in chunk {
-                        handles.push(s.spawn(|| {
-                    let mut warning = None;
-                    let tempo = if plan.target_slot_ms > 0
-                        && plan.raw_duration_ms > (plan.target_slot_ms + 80)
-                    {
-                        let ratio = (plan.raw_duration_ms as f64) / (plan.target_slot_ms as f64);
-                        if ratio > 1.25 && ratio <= 1.50 {
-                            warning = Some(format!(
-                                "Segment {} required {:.2}x time-stretch; this exceeds the preferred 1.25x natural-speech range",
-                                plan.segment_id, ratio
-                            ));
-                        }
-                        if ratio > 1.50 {
-                            let new_duration =
-                                (plan.raw_duration_ms as f64 / 1.50).round() as u64;
-                            warning = Some(format!(
-                                "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; preferred natural limit is 1.25x, hard-clamped to 1.50x (new duration: {}ms)",
-                                plan.segment_id, plan.raw_duration_ms, plan.target_slot_ms, ratio, new_duration
-                            ));
-                            Some(1.50)
-                        } else {
-                            Some(ratio)
-                        }
-                    } else {
-                        None
-                    };
 
-                    let dur_ms = Self::process_segment_single_pass(
-                        &plan.synth_path,
-                        &plan.target_path,
-                        tempo,
-                    )?;
-                    Ok(ProcessedSegment {
-                        path: plan.target_path.clone(),
-                        duration_ms: dur_ms,
-                        warning,
-                        start_ms: plan.start_ms,
-                        segment_id: plan.segment_id.clone(),
-                    })
-                }));
-                    }
-                    handles
-                        .into_iter()
-                        .map(|h| {
-                            h.join().map_err(|_| {
-                                DomainError::AlignmentError(
-                                    "Audio alignment worker panicked".to_string(),
-                                )
-                            })?
-                        })
-                        .collect()
-                },
-            );
-            processed.extend(chunk_results);
+        for plan in &plans {
+            let mut warning = None;
+            let tempo = if plan.target_slot_ms > 0
+                && plan.raw_duration_ms > (plan.target_slot_ms + 80)
+            {
+                let ratio = (plan.raw_duration_ms as f64) / (plan.target_slot_ms as f64);
+                if ratio > 1.25 && ratio <= 1.50 {
+                    warning = Some(format!(
+                        "Segment {} required {:.2}x time-stretch; this exceeds the preferred 1.25x natural-speech range",
+                        plan.segment_id, ratio
+                    ));
+                }
+                if ratio > 1.50 {
+                    let new_duration = (plan.raw_duration_ms as f64 / 1.50).round() as u64;
+                    warning = Some(format!(
+                        "Segment {} duration ({}ms) exceeded target slot ({}ms) by {:.2}x; preferred natural limit is 1.25x, hard-clamped to 1.50x (new duration: {}ms)",
+                        plan.segment_id,
+                        plan.raw_duration_ms,
+                        plan.target_slot_ms,
+                        ratio,
+                        new_duration
+                    ));
+                    Some(1.50)
+                } else {
+                    Some(ratio)
+                }
+            } else {
+                None
+            };
+
+            let dur_ms =
+                Self::process_segment_single_pass(&plan.synth_path, &plan.target_path, tempo)?;
+            processed.push(Ok(ProcessedSegment {
+                path: plan.target_path.clone(),
+                duration_ms: dur_ms,
+                warning,
+                start_ms: plan.start_ms,
+                segment_id: plan.segment_id.clone(),
+            }));
         }
 
         // 3. Assemble timeline sequentially (preserving correct chronology and silence gaps)
