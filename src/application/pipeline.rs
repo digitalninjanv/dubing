@@ -9,7 +9,7 @@ use crate::domain::{
     TranslatedDocument, TranslationTone, VoiceProfile,
 };
 use crate::infrastructure::filesystem::{
-    fingerprint, AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
+    fingerprint, write_atomic, AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
     PROVENANCE_SCHEMA_VERSION,
 };
 use futures::stream::{self, StreamExt};
@@ -60,14 +60,6 @@ pub struct PipelineOptions {
 
 /// Atomically persists a small JSON manifest (write .tmp + rename) so a
 /// crash can never leave a half-written transcript/translation behind.
-fn write_manifest_atomic(path: &std::path::Path, data: &str) -> Result<(), DomainError> {
-    let tmp_path = path.with_extension("json.tmp");
-    std::fs::write(&tmp_path, data)
-        .map_err(|e| DomainError::Internal(format!("Failed to write manifest tmp file: {}", e)))?;
-    std::fs::rename(&tmp_path, path)
-        .map_err(|e| DomainError::Internal(format!("Failed to publish manifest file: {}", e)))?;
-    Ok(())
-}
 
 pub struct PipelineOrchestrator {
     transcriber: Arc<dyn SpeechTranscriber>,
