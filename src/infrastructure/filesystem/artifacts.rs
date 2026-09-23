@@ -1,4 +1,5 @@
 use crate::domain::DomainError;
+use crate::infrastructure::filesystem::write_atomic;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -180,7 +181,7 @@ impl ArtifactStore {
         let content = serde_json::to_string_pretty(manifest).map_err(|e| {
             DomainError::Internal(format!("Failed to serialize artifact manifest: {}", e))
         })?;
-        write_atomic(&self.manifest_path(), &content)
+        write_atomic(&self.manifest_path(), content.as_bytes())
     }
 
     fn record_path(
@@ -218,7 +219,7 @@ impl ArtifactStore {
         let store = Self::new(job_dir);
         let _ = write_atomic(
             &store.manifest_path(),
-            &serde_json::to_string_pretty(&manifest).unwrap(),
+            serde_json::to_string_pretty(&manifest).unwrap().as_bytes(),
         );
         store
     }
@@ -253,19 +254,7 @@ fn sha256_file(path: &Path) -> Result<String, DomainError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn write_atomic(path: &Path, content: &str) -> Result<(), DomainError> {
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, content).map_err(|e| {
-        DomainError::Internal(format!(
-            "Failed to write artifact manifest temp file: {}",
-            e
-        ))
-    })?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        DomainError::Internal(format!("Failed to publish artifact manifest: {}", e))
-    })?;
-    Ok(())
-}
+
 
 #[cfg(test)]
 mod tests {
