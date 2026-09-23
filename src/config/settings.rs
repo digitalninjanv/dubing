@@ -321,6 +321,44 @@ mod runtime_tests {
     }
 
     #[test]
+    fn switching_to_openai_normalizes_gemini_defaults() {
+        let mut settings = super::AppSettings::default();
+        settings.providers.transcriber = "openai".to_string();
+        settings.providers.translator = "openai".to_string();
+        settings.providers.tts = "openai".to_string();
+
+        let normalized = settings.normalized();
+        assert_eq!(normalized.models.transcriber, "gpt-4o-transcribe");
+        assert_eq!(normalized.models.translator, "gpt-5");
+        assert_eq!(normalized.models.tts, "gpt-4o-mini-tts");
+        assert_eq!(
+            normalized.models.transcriber_fallbacks,
+            vec!["gpt-4o-mini-transcribe"]
+        );
+    }
+
+    #[test]
+    fn switching_back_to_gemini_restores_gemini_fallbacks() {
+        let mut settings = super::AppSettings::default();
+        settings.providers.transcriber = "openai".to_string();
+        settings.providers.translator = "openai".to_string();
+        settings.providers.tts = "openai".to_string();
+        settings = settings.normalized();
+        settings.providers.transcriber = "gemini".to_string();
+        settings.providers.translator = "gemini".to_string();
+        settings.providers.tts = "gemini".to_string();
+
+        let normalized = settings.normalized();
+        assert_eq!(normalized.models.transcriber, "gemini-3.5-transcribe");
+        assert_eq!(normalized.models.translator, "gemini-3.5-flash-lite");
+        assert_eq!(normalized.models.tts, "gemini-3.1-flash-tts-preview");
+        assert_eq!(
+            normalized.models.translator_fallbacks,
+            super::default_translator_fallbacks()
+        );
+    }
+
+    #[test]
     fn defaults_include_resilient_current_model_fallbacks() {
         let settings = super::AppSettings::default();
         assert_eq!(settings.models.transcriber, "gemini-3.5-transcribe");
