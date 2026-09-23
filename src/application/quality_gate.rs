@@ -46,6 +46,33 @@ impl QualityGate {
                     segment.id
                 )));
             }
+
+            let mut previous_word_end = segment.start_ms;
+            for word in &segment.words {
+                if word.word.trim().is_empty() {
+                    return Err(Self::fail(format!(
+                        "Transcript segment '{}' contains an empty word timestamp",
+                        segment.id
+                    )));
+                }
+                if word.start_ms < segment.start_ms
+                    || word.end_ms > segment.end_ms
+                    || word.start_ms >= word.end_ms
+                {
+                    return Err(Self::fail(format!(
+                        "Transcript segment '{}' contains an out-of-range word timestamp {}..{}",
+                        segment.id, word.start_ms, word.end_ms
+                    )));
+                }
+                if word.start_ms < previous_word_end {
+                    return Err(Self::fail(format!(
+                        "Transcript segment '{}' contains unordered word timestamps",
+                        segment.id
+                    )));
+                }
+                previous_word_end = word.end_ms;
+            }
+
             previous_start = segment.start_ms;
         }
 
