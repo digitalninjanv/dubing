@@ -79,6 +79,7 @@ impl ProviderRegistry {
                 .validate(&settings.providers.tts, fallback, ModelRole::Tts)?;
         }
 
+        let api_key = api_key.into();
         let needs_gemini = [
             &settings.providers.transcriber,
             &settings.providers.translator,
