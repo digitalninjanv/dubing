@@ -848,23 +848,46 @@ impl PipelineOrchestrator {
                 job.target_language.as_str(),
                 artifact.format.extension()
             ));
+            let separation_dir = job_dir.join("speech_separation");
+            let background = match self
+                .audio_engine
+                .separate_background(&job.source_audio.path, &separation_dir)
+                .await
+            {
+                Ok(path) => {
+                    tracing::info!("Speech/background separation generated: {}", path.display());
+                    path
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Speech separation unavailable; falling back to source ducking: {}",
+                        e
+                    );
+                    artifact.quality_warnings.push(format!(
+                        "Speech separation unavailable; used source ducking instead: {}",
+                        e
+                    ));
+                    job.source_audio.path.clone()
+                }
+            };
+
             match self
                 .audio_engine
-                .mix_with_ducking(&job.source_audio.path, &artifact.path, &ducked_output)
+                .mix_with_ducking(&background, &artifact.path, &ducked_output)
                 .await
             {
                 Ok(dp) => {
-                    tracing::info!("Audio ducking generated: {}", dp.display());
+                    tracing::info!("Audio ducking/mix generated: {}", dp.display());
                     audio_for_packaging = dp.clone();
                     if !job.source_audio.format.is_video() {
                         artifact.path = dp;
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to duck audio, keeping dubbed track: {}", e);
+                    tracing::warn!("Failed to mix background with dubbed track, keeping dubbed track: {}", e);
                     artifact
                         .quality_warnings
-                        .push(format!("Audio ducking failed: {}", e));
+                        .push(format!("Background mix failed: {}", e));
                 }
             }
         }
