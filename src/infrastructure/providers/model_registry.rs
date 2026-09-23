@@ -110,7 +110,22 @@ impl ModelRegistry {
         });
         registry.register(ModelSpec {
             provider: "gemini".to_string(),
+            id: "gemini-3.8-flash".to_string(),
+            capabilities: ModelCapabilities::general_text_audio(),
+        });
+        registry.register(ModelSpec {
+            provider: "gemini".to_string(),
             id: "gemini-3.1-flash-tts-preview".to_string(),
+            capabilities: ModelCapabilities::tts(),
+        });
+        registry.register(ModelSpec {
+            provider: "gemini".to_string(),
+            id: "gemini-2.5-flash-preview-tts".to_string(),
+            capabilities: ModelCapabilities::tts(),
+        });
+        registry.register(ModelSpec {
+            provider: "gemini".to_string(),
+            id: "gemini-2.5-pro-preview-tts".to_string(),
             capabilities: ModelCapabilities::tts(),
         });
 
@@ -140,7 +155,8 @@ impl ModelRegistry {
             ));
         }
 
-        if let Some(spec) = self.get(provider, model) {
+        let normalized_provider = provider.to_ascii_lowercase();
+        if let Some(spec) = self.get(&normalized_provider, model) {
             if !spec.capabilities.supports(role) {
                 return Err(DomainError::UnsupportedModel {
                     role: role.as_str().to_string(),
