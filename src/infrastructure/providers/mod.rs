@@ -79,6 +79,13 @@ impl ProviderRegistry {
                 .validate(&settings.providers.tts, fallback, ModelRole::Tts)?;
         }
 
+        let needs_gemini = [&settings.providers.transcriber, &settings.providers.translator, &settings.providers.tts]
+            .iter()
+            .any(|provider| provider.eq_ignore_ascii_case("gemini"));
+        if needs_gemini && api_key.trim().is_empty() {
+            return Err(DomainError::AuthenticationFailed);
+        }
+
         let gemini_client = {
             let mut client = GeminiClient::new(api_key);
             if let Some(token) = cancel_token.clone() {
