@@ -342,4 +342,36 @@ mod tests {
 
         assert!(QualityGate::validate_translation(&transcript(), &value).is_err());
     }
+
+
+    #[test]
+    fn rejects_word_timestamp_outside_segment() {
+        let mut value = transcript();
+        value.segments[0].words.push(crate::domain::WordTimestamp {
+            word: "Hello".to_string(),
+            start_ms: 0,
+            end_ms: 1200,
+        });
+
+        assert!(QualityGate::validate_transcript(&value).is_err());
+    }
+
+    #[test]
+    fn rejects_unordered_word_timestamps() {
+        let mut value = transcript();
+        value.segments[0].words = vec![
+            crate::domain::WordTimestamp {
+                word: "Hello".to_string(),
+                start_ms: 100,
+                end_ms: 500,
+            },
+            crate::domain::WordTimestamp {
+                word: "again".to_string(),
+                start_ms: 400,
+                end_ms: 900,
+            },
+        ];
+
+        assert!(QualityGate::validate_transcript(&value).is_err());
+    }
 }
