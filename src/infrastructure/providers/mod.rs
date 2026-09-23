@@ -117,7 +117,7 @@ impl ProviderRegistry {
                 "openai" => Arc::new(OpenAiTranscriber::new(
                     openai_client
                         .clone()
-                        .ok_or_else(|| DomainError::AuthenticationFailed)?,
+                        .ok_or(DomainError::AuthenticationFailed)?,
                     settings.models.transcriber.clone(),
                 )),
                 provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
@@ -135,7 +135,7 @@ impl ProviderRegistry {
                 "openai" => Arc::new(OpenAiTranslator::new(
                     openai_client
                         .clone()
-                        .ok_or_else(|| DomainError::AuthenticationFailed)?,
+                        .ok_or(DomainError::AuthenticationFailed)?,
                     settings.models.translator.clone(),
                 )),
                 provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
@@ -149,7 +149,7 @@ impl ProviderRegistry {
                     settings.models.tts_fallbacks.clone(),
                 )),
                 "openai" => Arc::new(OpenAiSynthesizer::new(
-                    openai_client.ok_or_else(|| DomainError::AuthenticationFailed)?,
+                    openai_client.ok_or(DomainError::AuthenticationFailed)?,
                     settings.models.tts.clone(),
                 )),
                 provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
