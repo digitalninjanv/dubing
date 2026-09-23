@@ -224,6 +224,23 @@ mod tests {
     }
 
     #[test]
+    fn known_openai_models_match_pipeline_roles() {
+        let registry = ModelRegistry::standard();
+        assert!(registry
+            .validate("openai", "gpt-4o-transcribe", ModelRole::Transcription)
+            .is_ok());
+        assert!(registry
+            .validate("openai", "gpt-5", ModelRole::Translation)
+            .is_ok());
+        assert!(registry
+            .validate("openai", "gpt-4o-mini-tts", ModelRole::Tts)
+            .is_ok());
+        assert!(registry
+            .validate("openai", "gpt-4o-mini-tts", ModelRole::Transcription)
+            .is_err());
+    }
+
+    #[test]
     fn provider_validation_is_case_insensitive_for_known_models() {
         let registry = ModelRegistry::standard();
         assert!(registry
