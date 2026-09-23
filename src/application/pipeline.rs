@@ -605,7 +605,6 @@ impl PipelineOrchestrator {
                 // without provenance they cannot be proven equivalent to the
                 // current model/voice/prompt configuration.
                 if let Some(candidate) = cached_path {
-                    let candidate = cached_path.unwrap_or_else(|| segment_output_file.clone());
                     if let Ok(meta) = std::fs::metadata(&candidate) {
                         if meta.len() > 1024 {
                             if let Ok(probe_meta) = engine.probe(&candidate).await {
@@ -618,6 +617,7 @@ impl PipelineOrchestrator {
                                             path: candidate,
                                             duration_ms: probe_meta.duration_ms,
                                         },
+                                        tts_provenance,
                                     ));
                                 }
                             }
@@ -643,17 +643,17 @@ impl PipelineOrchestrator {
                     .synthesize_segment(&seg, &voice, &segment_output_file)
                     .await?;
 
-                Ok((idx, synth_result))
+                Ok((idx, synth_result, tts_provenance))
             });
         }
 
         // Controlled concurrency keeps API pressure and local memory usage bounded.
         let mut stream = stream::iter(tasks).buffer_unordered(self.tts_concurrency);
-        let mut collected: Vec<(usize, SynthesizedSegment)> =
+        let mut collected: Vec<(usize, SynthesizedSegment, String)> =
             Vec::with_capacity(translated.segments.len());
 
         while let Some(res) = stream.next().await {
-            let (idx, synth_result) = match res {
+            let (idx, synth_result, tts_provenance) = match res {
                 Ok(item) => item,
                 Err(e) => {
                     if cancel_token.is_cancelled() {
@@ -673,28 +673,13 @@ impl PipelineOrchestrator {
                 }
             };
 
-            let tts_provenance = fingerprint(&serde_json::json!({
-                "schema": PROVENANCE_SCHEMA_VERSION,
-                "stage": "synthesis",
-                "segment": &translated.segments[idx],
-                "voice": &{
-                    let segment = &translated.segments[idx];
-                    segment
-                        .speaker_id
-                        .as_ref()
-                        .and_then(|s| voice_map.get(s))
-                        .unwrap_or(&default_voice)
-                },
-                "provider": self.synthesizer.cache_identity(),
-            }))
-            .map_err(|e| DomainError::Internal(format!("Failed to fingerprint TTS artifact: {}", e)))?;
             artifact_store.register_with_provenance(
                 format!("synthesis/{idx:04}"),
                 &synth_result.path,
                 &mut artifact_manifest,
-                Some(tts_provenance),
+                Some(tts_provenance.clone()),
             )?;
-            collected.push((idx, synth_result));
+            collected.push((idx, synth_result, tts_provenance));
             job.progress.completed_segments += 1;
             job.progress.message = format!(
                 "Synthesized segment {} of {}",
@@ -712,9 +697,9 @@ impl PipelineOrchestrator {
             on_progress(&job);
         }
 
-        collected.sort_by_key(|(idx, _)| *idx);
+        collected.sort_by_key(|(idx, _, _)| *idx);
         let synthesized_segments: Vec<SynthesizedSegment> =
-            collected.into_iter().map(|(_, seg)| seg).collect();
+            collected.into_iter().map(|(_, seg, _)| seg).collect();
         QualityGate::validate_synthesis(&translated, &synthesized_segments)?;
         let t_synthesis = t_synthesis_start.elapsed();
 
