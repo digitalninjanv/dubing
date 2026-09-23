@@ -159,7 +159,6 @@ impl FfmpegAligner {
         source_timeline: &[TranscriptSegment],
         synthesized: &[SynthesizedSegment],
         target_total_duration_ms: Option<u64>,
-        max_parallel: usize,
     ) -> Result<AlignmentResult, DomainError> {
         // Reuse known duration/sample_rate from SynthesizedSegment where
         // possible; probing is fallback only (F4: dedup probe).
@@ -214,22 +213,18 @@ impl FfmpegAligner {
             segment_id: String,
         }
 
-        // The application-level FFmpeg semaphore already limits blocking jobs
-        // globally. Keep alignment workers bounded by the same configured
-        // value instead of silently spawning up to eight FFmpeg processes.
-        let max_parallel = max_parallel.max(1);
+        // Alignment runs inside the engine-level FFmpeg semaphore, so it must
+        // not create another independent pool of FFmpeg subprocesses. Keeping
+        // this work sequential prevents one alignment job from multiplying the
+        // configured global process limit.
 
         // F3: bounded parallelism via chunked scope — avoids 100 threads +
         // 100 ffmpeg processes on large jobs, without needing an async semaphore
         // inside a sync thread::scope.
         let mut processed: Vec<Result<ProcessedSegment, DomainError>> =
             Vec::with_capacity(plans.len());
-        for chunk in plans.chunks(max_parallel) {
-            let chunk_results: Vec<Result<ProcessedSegment, DomainError>> = std::thread::scope(
-                |s| {
-                    let mut handles = Vec::with_capacity(chunk.len());
-                    for plan in chunk {
-                        handles.push(s.spawn(|| {
+        for plan in &plans {
+            let item_res = (|| {
                     let mut warning = None;
                     let tempo = if plan.target_slot_ms > 0
                         && plan.raw_duration_ms > (plan.target_slot_ms + 80)
@@ -268,21 +263,8 @@ impl FfmpegAligner {
                         start_ms: plan.start_ms,
                         segment_id: plan.segment_id.clone(),
                     })
-                }));
-                    }
-                    handles
-                        .into_iter()
-                        .map(|h| {
-                            h.join().map_err(|_| {
-                                DomainError::AlignmentError(
-                                    "Audio alignment worker panicked".to_string(),
-                                )
-                            })?
-                        })
-                        .collect()
-                },
-            );
-            processed.extend(chunk_results);
+                })();
+            processed.push(item_res);
         }
 
         // 3. Assemble timeline sequentially (preserving correct chronology and silence gaps)
