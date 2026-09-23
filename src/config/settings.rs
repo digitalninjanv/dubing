@@ -248,6 +248,15 @@ impl AppSettings {
                 if models.tts.starts_with("gpt-") {
                     models.tts = default_tts_model();
                 }
+                if models.transcriber_fallbacks.iter().any(|m| m.starts_with("gpt-")) {
+                    models.transcriber_fallbacks = default_transcriber_fallbacks();
+                }
+                if models.translator_fallbacks.iter().any(|m| m.starts_with("gpt-")) {
+                    models.translator_fallbacks = default_translator_fallbacks();
+                }
+                if models.tts_fallbacks.iter().any(|m| m.starts_with("gpt-")) {
+                    models.tts_fallbacks = default_tts_fallbacks();
+                }
             }
         }
 
