@@ -192,4 +192,32 @@ mod tests {
             .validate("gemini", "future-model-2027", ModelRole::Tts)
             .is_ok());
     }
+
+    #[test]
+    fn known_models_cover_current_fallback_chain() {
+        let registry = ModelRegistry::standard();
+        for model in [
+            "gemini-3.8-flash",
+            "gemini-2.5-flash-preview-tts",
+            "gemini-2.5-pro-preview-tts",
+        ] {
+            let role = if model.contains("tts") {
+                ModelRole::Tts
+            } else {
+                ModelRole::Translation
+            };
+            assert!(registry.validate("gemini", model, role).is_ok(), "{model}");
+        }
+    }
+
+    #[test]
+    fn provider_validation_is_case_insensitive_for_known_models() {
+        let registry = ModelRegistry::standard();
+        assert!(registry
+            .validate("GEMINI", "gemini-3.8-flash", ModelRole::Translation)
+            .is_ok());
+        assert!(registry
+            .validate("Gemini", "gemini-3.5-transcribe", ModelRole::Transcription)
+            .is_ok());
+    }
 }
