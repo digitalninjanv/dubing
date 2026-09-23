@@ -58,7 +58,7 @@ fn golden_audio_export_stays_within_duration_and_integrity_tolerance() {
         generate_fixture(&input, fixture);
 
         let artifact = FfmpegExporter::export(
-            &[input.clone()],
+            std::slice::from_ref(&input),
             &output,
             AudioFormat::Mp3,
             192,
