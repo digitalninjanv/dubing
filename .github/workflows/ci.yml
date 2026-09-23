@@ -27,6 +27,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Format check
         run: cargo fmt --all -- --check
+      - name: Capture format diagnostics
+        if: always()
+        run: |
+          cargo fmt --all -- --check > /tmp/rustfmt.log 2>&1 || true
+          cp /tmp/rustfmt.log rustfmt.log
+      - name: Upload format diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-diagnostics
+          path: rustfmt.log
       - name: Lints (zero warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
