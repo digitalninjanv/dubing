@@ -378,7 +378,12 @@ impl PipelineOrchestrator {
                 "tone": &options.tone,
                 "provider": self.translator.cache_identity(),
             }))
-            .map_err(|e| DomainError::Internal(format!("Failed to fingerprint translation provenance: {}", e)))?;
+            .map_err(|e| {
+                DomainError::Internal(format!(
+                    "Failed to fingerprint translation provenance: {}",
+                    e
+                ))
+            })?;
 
             let translated_path = artifact_store
                 .verify_with_provenance(
@@ -446,10 +451,12 @@ impl PipelineOrchestrator {
                                 "tone": &options.tone,
                                 "provider": self.translator.cache_identity(),
                             }))
-                            .map_err(|e| DomainError::Internal(format!(
-                                "Failed to fingerprint reviewed translation provenance: {}",
-                                e
-                            )))?;
+                            .map_err(|e| {
+                                DomainError::Internal(format!(
+                                    "Failed to fingerprint reviewed translation provenance: {}",
+                                    e
+                                ))
+                            })?;
                             artifact_store.register_with_provenance(
                                 "translation",
                                 &translated_path,
@@ -591,10 +598,7 @@ impl PipelineOrchestrator {
                 "provider": &synthesizer_identity,
             }))
             .map_err(|e| {
-                DomainError::Internal(format!(
-                    "Failed to fingerprint TTS provenance: {}",
-                    e
-                ))
+                DomainError::Internal(format!("Failed to fingerprint TTS provenance: {}", e))
             })?;
 
             tasks.push(async move {
