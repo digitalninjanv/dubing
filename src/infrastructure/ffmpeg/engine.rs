@@ -121,14 +121,12 @@ impl AudioEngine for FfmpegAudioEngine {
         let source_timeline_owned = source_timeline.to_vec();
         let synthesized_owned = synthesized.to_vec();
 
-        let max_concurrency = self.max_concurrency;
         self.run_blocking(move || {
             FfmpegAligner::align(
                 &job_dir_owned,
                 &source_timeline_owned,
                 &synthesized_owned,
                 target_total_duration_ms,
-                max_concurrency,
             )
         })
         .await
