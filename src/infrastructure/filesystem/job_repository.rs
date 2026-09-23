@@ -41,8 +41,6 @@ impl JobRepository for FileJobRepository {
             .map_err(|e| DomainError::Internal(format!("Failed to create job dir: {}", e)))?;
 
         let final_path = job_dir.join("job.json");
-        let tmp_path = job_dir.join("job.json.tmp");
-
         let json_data = serde_json::to_vec_pretty(job)
             .map_err(|e| DomainError::Internal(format!("Failed to serialize job: {}", e)))?;
 
