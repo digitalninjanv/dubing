@@ -329,9 +329,9 @@ impl SettingsDialog {
         let privacy_group = libadwaita::PreferencesGroup::new();
         privacy_group.set_title("Privacy & Data Usage");
         privacy_group.set_description(Some(
-            "Audio submitted for transcription, translation, and voice synthesis is processed via Google Gemini APIs. \
-            Ensure you have the necessary rights or authorization for the audio materials you upload. AudioDub AI does not \
-            store your audio on external servers beyond temporary API processing windows (up to 48 hours for Gemini File API)."
+            "Audio is sent to the selected AI providers for transcription, translation, and voice synthesis. \
+            Configure only providers you are authorized to use. Local speech/background separation, when enabled, \
+            runs through the optional Demucs installation on this machine."
         ));
         page.add(&privacy_group);
 
