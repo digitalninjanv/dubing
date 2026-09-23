@@ -51,6 +51,15 @@ impl FfmpegExporter {
             .map_err(|e| DomainError::ExportError(format!("Failed to flush concat list: {}", e)))?;
 
         let mut cmd = Command::new("ffmpeg");
+        // Encode to a job-local temporary file first. A crash or interrupted
+        // FFmpeg process must never leave a corrupt final output at the public path.
+        let mut output_tmp = tempfile::Builder::new()
+            .prefix("audiodub_output_")
+            .suffix(format!(".{}", format.extension()))
+            .tempfile_in(parent_dir)
+            .map_err(|e| DomainError::ExportError(format!("Failed to create output temp file: {}", e)))?;
+        let output_tmp_path = output_tmp.path().to_path_buf();
+
         cmd.arg("-y")
             .arg("-f")
             .arg("concat")
@@ -59,16 +68,22 @@ impl FfmpegExporter {
             .arg("-i")
             .arg(&concat_list_path);
 
-        // Master Duration Synchronization:
-        // If target_duration_ms is provided, pad silence up to minimum duration if audio is shorter.
-        // We use apad=whole_dur to guarantee speech is NEVER amputated or cut off mid-sentence.
-        if let Some(target_ms) = target_duration_ms {
+        // Mastering: keep the exported program at a predictable integrated loudness
+        // target with a conservative true-peak ceiling. Padding happens before the
+        // loudness stage so the final program remains duration-safe.
+        let audio_filter = if let Some(target_ms) = target_duration_ms {
             if target_ms > 0 {
-                let duration_secs = (target_ms as f64) / 1000.0;
-                cmd.arg("-af")
-                    .arg(format!("apad=whole_dur={:.3}", duration_secs));
+                format!(
+                    "apad=whole_dur={:.3},loudnorm=I=-16:TP=-1.5:LRA=11",
+                    target_ms as f64 / 1000.0
+                )
+            } else {
+                "loudnorm=I=-16:TP=-1.5:LRA=11".to_string()
             }
-        }
+        } else {
+            "loudnorm=I=-16:TP=-1.5:LRA=11".to_string()
+        };
+        cmd.arg("-af").arg(audio_filter);
 
         match format {
             AudioFormat::Mp3 => {
@@ -85,7 +100,7 @@ impl FfmpegExporter {
             }
         }
 
-        cmd.arg(output_path);
+        cmd.arg(&output_tmp_path);
 
         let output = cmd.output().map_err(|e| {
             DomainError::ExportError(format!("Failed to execute ffmpeg concat: {}", e))
@@ -101,6 +116,11 @@ impl FfmpegExporter {
                 stderr
             )));
         }
+
+        // Publish atomically only after FFmpeg and ffprobe both succeed.
+        std::fs::rename(&output_tmp_path, output_path).map_err(|e| {
+            DomainError::ExportError(format!("Failed to publish final output atomically: {}", e))
+        })?;
 
         // Validate final output using ffprobe (Quality Gate)
         let metadata = FfprobeInspector::probe(output_path)?;
