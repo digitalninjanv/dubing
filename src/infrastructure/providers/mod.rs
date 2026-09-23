@@ -7,6 +7,9 @@ use crate::domain::DomainError;
 use crate::infrastructure::gemini::{
     GeminiClient, GeminiSynthesizer, GeminiTranscriber, GeminiTranslator,
 };
+use crate::infrastructure::openai::{
+    OpenAiClient, OpenAiSynthesizer, OpenAiTranscriber, OpenAiTranslator,
+};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -76,37 +79,70 @@ impl ProviderRegistry {
                 .validate(&settings.providers.tts, fallback, ModelRole::Tts)?;
         }
 
-        let mut client = GeminiClient::new(api_key);
-        if let Some(token) = cancel_token {
-            client = client.with_cancel_token(token);
-        }
-        if let Some(callback) = status_callback {
-            client = client.with_status_callback(callback);
-        }
+        let gemini_client = {
+            let mut client = GeminiClient::new(api_key);
+            if let Some(token) = cancel_token.clone() {
+                client = client.with_cancel_token(token);
+            }
+            if let Some(callback) = status_callback.clone() {
+                client = client.with_status_callback(callback);
+            }
+            client
+        };
 
-        Ok(PipelineProviders {
-            transcriber: Arc::new(GeminiTranscriber::new_with_fallbacks(
-                client.clone(),
+        let openai_key = std::env::var("OPENAI_API_KEY").ok().filter(|k| !k.trim().is_empty());
+        let openai_client = openai_key.map(OpenAiClient::new);
+
+        let transcriber: Arc<dyn SpeechTranscriber> = match settings.providers.transcriber.to_ascii_lowercase().as_str() {
+            "gemini" => Arc::new(GeminiTranscriber::new_with_fallbacks(
+                gemini_client.clone(),
                 settings.models.transcriber.clone(),
                 settings.models.transcriber_fallbacks.clone(),
             )),
-            translator: Arc::new(GeminiTranslator::new_with_fallbacks_and_limits(
-                client.clone(),
+            "openai" => Arc::new(OpenAiTranscriber::new(
+                openai_client.clone().ok_or_else(|| DomainError::AuthenticationFailed)?,
+                settings.models.transcriber.clone(),
+            )),
+            provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
+        };
+
+        let translator: Arc<dyn TextTranslator> = match settings.providers.translator.to_ascii_lowercase().as_str() {
+            "gemini" => Arc::new(GeminiTranslator::new_with_fallbacks_and_limits(
+                gemini_client.clone(),
                 settings.models.translator.clone(),
                 settings.models.translator_fallbacks.clone(),
                 settings.runtime.translation_batch_size,
                 settings.runtime.translation_concurrency,
             )),
-            synthesizer: Arc::new(GeminiSynthesizer::new_with_fallbacks(
-                client,
+            "openai" => Arc::new(OpenAiTranslator::new(
+                openai_client.clone().ok_or_else(|| DomainError::AuthenticationFailed)?,
+                settings.models.translator.clone(),
+            )),
+            provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
+        };
+
+        let synthesizer: Arc<dyn SpeechSynthesizer> = match settings.providers.tts.to_ascii_lowercase().as_str() {
+            "gemini" => Arc::new(GeminiSynthesizer::new_with_fallbacks(
+                gemini_client,
                 settings.models.tts.clone(),
                 settings.models.tts_fallbacks.clone(),
             )),
+            "openai" => Arc::new(OpenAiSynthesizer::new(
+                openai_client.ok_or_else(|| DomainError::AuthenticationFailed)?,
+                settings.models.tts.clone(),
+            )),
+            provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
+        };
+
+        Ok(PipelineProviders {
+            transcriber,
+            translator,
+            synthesizer,
         })
     }
 
     fn validate_provider(&self, provider: &str) -> Result<(), DomainError> {
-        if provider.eq_ignore_ascii_case("gemini") {
+        if provider.eq_ignore_ascii_case("gemini") || provider.eq_ignore_ascii_case("openai") {
             Ok(())
         } else {
             Err(DomainError::UnsupportedProvider(provider.to_string()))
