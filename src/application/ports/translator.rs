@@ -4,7 +4,9 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait TextTranslator: Send + Sync {
     /// Stable non-secret identity of the translation implementation and model candidates.
-    fn cache_identity(&self) -> String { "unknown-translator".to_string() }
+    fn cache_identity(&self) -> String {
+        "unknown-translator".to_string()
+    }
     async fn translate(
         &self,
         transcript: &Transcript,
