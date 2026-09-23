@@ -120,19 +120,18 @@ impl FfmpegExporter {
             )));
         }
 
-        // Publish atomically only after FFmpeg and ffprobe both succeed.
-        std::fs::rename(&output_tmp_path, output_path).map_err(|e| {
-            DomainError::ExportError(format!("Failed to publish final output atomically: {}", e))
-        })?;
-
-        // Validate final output using ffprobe (Quality Gate)
-        let metadata = FfprobeInspector::probe(output_path)?;
+        // Validate the temporary output before it becomes visible at the public path.
+        let metadata = FfprobeInspector::probe(&output_tmp_path)?;
         if metadata.duration_ms == 0 {
             return Err(DomainError::ExportError(
                 "Exported audio file has 0 duration".to_string(),
             ));
         }
 
+        // Publish atomically only after FFmpeg and ffprobe both succeed.
+        std::fs::rename(&output_tmp_path, output_path).map_err(|e| {
+            DomainError::ExportError(format!("Failed to publish final output atomically: {}", e))
+        })?;
         let file_size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
 
         if file_size == 0 {
