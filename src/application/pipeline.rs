@@ -607,6 +607,8 @@ impl PipelineOrchestrator {
                 }
 
                 let tts_key = format!("synthesis/{idx:04}");
+                let has_manifest_record =
+                    synthesis_manifest_for_task.artifacts.contains_key(&tts_key);
                 let cached_path = artifact_store_for_task
                     .verify_with_provenance(
                         &tts_key,
@@ -614,11 +616,19 @@ impl PipelineOrchestrator {
                         Some(&tts_provenance),
                     )
                     .ok()
-                    .flatten();
+                    .flatten()
+                    .or_else(|| {
+                        // One-time migration for pre-provenance jobs. A legacy
+                        // file is accepted only when no manifest record exists;
+                        // after validation it is registered with current
+                        // provenance so future config/model changes invalidate it.
+                        if !has_manifest_record && segment_output_file.is_file() {
+                            Some(segment_output_file.clone())
+                        } else {
+                            None
+                        }
+                    });
 
-                // Unregistered legacy files are intentionally not adopted here:
-                // without provenance they cannot be proven equivalent to the
-                // current model/voice/prompt configuration.
                 if let Some(candidate) = cached_path {
                     if let Ok(meta) = std::fs::metadata(&candidate) {
                         if meta.len() > 1024 {
