@@ -53,7 +53,7 @@ impl FfmpegExporter {
         let mut cmd = Command::new("ffmpeg");
         // Encode to a job-local temporary file first. A crash or interrupted
         // FFmpeg process must never leave a corrupt final output at the public path.
-        let mut output_tmp = tempfile::Builder::new()
+        let output_tmp = tempfile::Builder::new()
             .prefix("audiodub_output_")
             .suffix(format!(".{}", format.extension()))
             .tempfile_in(parent_dir)
