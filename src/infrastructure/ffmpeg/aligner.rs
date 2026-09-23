@@ -159,6 +159,7 @@ impl FfmpegAligner {
         source_timeline: &[TranscriptSegment],
         synthesized: &[SynthesizedSegment],
         target_total_duration_ms: Option<u64>,
+        max_parallel: usize,
     ) -> Result<AlignmentResult, DomainError> {
         // Reuse known duration/sample_rate from SynthesizedSegment where
         // possible; probing is fallback only (F4: dedup probe).
@@ -213,9 +214,10 @@ impl FfmpegAligner {
             segment_id: String,
         }
 
-        let max_parallel = std::thread::available_parallelism()
-            .map(|n| (n.get() * 2).clamp(4, 8))
-            .unwrap_or(4);
+        // The application-level FFmpeg semaphore already limits blocking jobs
+        // globally. Keep alignment workers bounded by the same configured
+        // value instead of silently spawning up to eight FFmpeg processes.
+        let max_parallel = max_parallel.max(1);
 
         // F3: bounded parallelism via chunked scope — avoids 100 threads +
         // 100 ffmpeg processes on large jobs, without needing an async semaphore
