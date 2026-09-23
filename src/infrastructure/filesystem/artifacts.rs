@@ -254,8 +254,6 @@ fn sha256_file(path: &Path) -> Result<String, DomainError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::{ArtifactManifest, ArtifactStore};
