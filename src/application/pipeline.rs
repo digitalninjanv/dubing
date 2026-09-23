@@ -58,9 +58,6 @@ pub struct PipelineOptions {
     pub review_channel: Option<async_channel::Sender<ReviewRequest>>,
 }
 
-/// Atomically persists a small JSON manifest (write .tmp + rename) so a
-/// crash can never leave a half-written transcript/translation behind.
-
 pub struct PipelineOrchestrator {
     transcriber: Arc<dyn SpeechTranscriber>,
     translator: Arc<dyn TextTranslator>,
