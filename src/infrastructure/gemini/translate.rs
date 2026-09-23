@@ -286,7 +286,12 @@ Transcript segments:
 #[async_trait]
 impl TextTranslator for GeminiTranslator {
     fn cache_identity(&self) -> String {
-        format!("gemini-translator:{}|fallbacks:{}|batch:{}", self.model_name, self.fallback_models.join(","), self.batch_size)
+        format!(
+            "gemini-translator:{}|fallbacks:{}|batch:{}",
+            self.model_name,
+            self.fallback_models.join(","),
+            self.batch_size
+        )
     }
 
     async fn translate(
