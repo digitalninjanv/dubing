@@ -47,6 +47,14 @@ pub trait AudioEngine: Send + Sync {
         output_video: &Path,
     ) -> Result<PathBuf, DomainError>;
 
+    /// Separate speech/vocals from the source and return a speech-free background stem.
+    /// The infrastructure adapter may use an optional local ML separator.
+    async fn separate_background(
+        &self,
+        source_audio: &Path,
+        output_dir: &Path,
+    ) -> Result<PathBuf, DomainError>;
+
     /// Dynamically duck background audio under a voiceover track using FFmpeg sidechaincompress
     async fn mix_with_ducking(
         &self,
