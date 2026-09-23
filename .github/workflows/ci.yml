@@ -46,6 +46,27 @@ jobs:
       - name: Lints (zero warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
-        run: cargo test --all-targets --all-features
+        id: tests
+        continue-on-error: true
+        run: |
+          cargo test --all-targets --all-features > /tmp/cargo-test.log 2>&1
+          cat /tmp/cargo-test.log
+          exit ${PIPESTATUS[0]}
+      - name: Persist test diagnostics
+        if: steps.tests.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          encoded="$(base64 -w0 /tmp/cargo-test.log)"
+          if gh api "repos/${{ github.repository }}/contents/ci-test-failure.log?ref=$BRANCH_NAME" >/tmp/test-file.json 2>/dev/null; then
+            sha="$(jq -r '.sha' /tmp/test-file.json)"
+            gh api --method PUT "repos/${{ github.repository }}/contents/ci-test-failure.log"               -f message="ci: persist test diagnostics"               -f content="$encoded"               -f branch="$BRANCH_NAME"               -f sha="$sha" >/dev/null
+          else
+            gh api --method PUT "repos/${{ github.repository }}/contents/ci-test-failure.log"               -f message="ci: persist test diagnostics"               -f content="$encoded"               -f branch="$BRANCH_NAME" >/dev/null
+          fi
+      - name: Fail on test failure
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - name: Release build
         run: cargo build --release --all-features
