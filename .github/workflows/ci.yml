@@ -9,7 +9,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -25,49 +25,11 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Format and persist changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-        run: |
-          cargo fmt --all
-          if ! git diff --quiet; then
-            git diff --name-only -z | while IFS= read -r -d '' file; do
-              encoded="$(base64 -w0 "$file")"
-              sha="$(gh api "repos/${{ github.repository }}/contents/$file?ref=$BRANCH_NAME" --jq '.sha')"
-              gh api --method PUT "repos/${{ github.repository }}/contents/$file" \
-                -f message="style: apply cargo fmt" \
-                -f content="$encoded" \
-                -f branch="$BRANCH_NAME" \
-                -f sha="$sha" >/dev/null
-            done
-          fi
-          cargo fmt --all -- --check
+      - name: Format check
+        run: cargo fmt --all -- --check
       - name: Lints (zero warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
-        id: tests
-        continue-on-error: true
-        run: |
-          cargo test --all-targets --all-features > /tmp/cargo-test.log 2>&1
-          status=$?
-          cat /tmp/cargo-test.log
-          exit $status
-      - name: Persist test diagnostics
-        if: steps.tests.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-        run: |
-          encoded="$(base64 -w0 /tmp/cargo-test.log)"
-          if gh api "repos/${{ github.repository }}/contents/ci-test-failure.log?ref=$BRANCH_NAME" >/tmp/test-file.json 2>/dev/null; then
-            sha="$(jq -r '.sha' /tmp/test-file.json)"
-            gh api --method PUT "repos/${{ github.repository }}/contents/ci-test-failure.log"               -f message="ci: persist test diagnostics"               -f content="$encoded"               -f branch="$BRANCH_NAME"               -f sha="$sha" >/dev/null
-          else
-            gh api --method PUT "repos/${{ github.repository }}/contents/ci-test-failure.log"               -f message="ci: persist test diagnostics"               -f content="$encoded"               -f branch="$BRANCH_NAME" >/dev/null
-          fi
-      - name: Fail on test failure
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
+        run: cargo test --all-targets --all-features
       - name: Release build
         run: cargo build --release --all-features
