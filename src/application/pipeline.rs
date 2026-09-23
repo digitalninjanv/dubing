@@ -842,7 +842,12 @@ impl PipelineOrchestrator {
         // Audio Ducking (Smooth BGM attenuation)
         let mut audio_for_packaging = artifact.path.clone();
         if options.duck_audio {
-            let ducked_output = output_dir.join(format!("{}_{}_ducked.{}", file_stem, job.target_language.as_str(), artifact.format.extension()));
+            let ducked_output = output_dir.join(format!(
+                "{}_{}_ducked.{}",
+                file_stem,
+                job.target_language.as_str(),
+                artifact.format.extension()
+            ));
             match self
                 .audio_engine
                 .mix_with_ducking(&job.source_audio.path, &artifact.path, &ducked_output)
