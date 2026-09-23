@@ -295,7 +295,7 @@ impl PipelineOrchestrator {
             let transcript_path = job_dir.join("transcript.json");
             let data = serde_json::to_string_pretty(&t)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
-            write_manifest_atomic(&transcript_path, &data)?;
+            write_atomic(&transcript_path, data.as_bytes())?;
 
             t
         } else {
@@ -351,7 +351,7 @@ impl PipelineOrchestrator {
             let translated_path = job_dir.join("translated.json");
             let data = serde_json::to_string_pretty(&tr)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
-            write_manifest_atomic(&translated_path, &data)?;
+            write_atomic(&translated_path, data.as_bytes())?;
             artifact_store.register_with_provenance(
                 "translation",
                 &translated_path,
@@ -434,7 +434,7 @@ impl PipelineOrchestrator {
                                     e
                                 ))
                             })?;
-                            write_manifest_atomic(&translated_path, &data)?;
+                            write_atomic(&translated_path, data.as_bytes())?;
                             let translation_provenance = fingerprint(&serde_json::json!({
                                 "schema": PROVENANCE_SCHEMA_VERSION,
                                 "stage": "translation",
