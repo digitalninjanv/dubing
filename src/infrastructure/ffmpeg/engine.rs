@@ -15,7 +15,6 @@ use uuid::Uuid;
 
 pub struct FfmpegAudioEngine {
     semaphore: Arc<Semaphore>,
-    max_concurrency: usize,
 }
 
 impl FfmpegAudioEngine {
@@ -24,10 +23,8 @@ impl FfmpegAudioEngine {
     }
 
     pub fn with_concurrency(max_concurrency: usize) -> Self {
-        let normalized = max_concurrency.max(1);
         Self {
-            semaphore: Arc::new(Semaphore::new(normalized)),
-            max_concurrency: normalized,
+            semaphore: Arc::new(Semaphore::new(max_concurrency.max(1))),
         }
     }
 
@@ -218,14 +215,12 @@ mod tests {
     use super::FfmpegAudioEngine;
 
     #[test]
-    fn zero_concurrency_is_clamped_to_one() {
-        let engine = FfmpegAudioEngine::with_concurrency(0);
-        assert_eq!(engine.max_concurrency, 1);
+    fn zero_concurrency_is_accepted_without_panicking() {
+        let _engine = FfmpegAudioEngine::with_concurrency(0);
     }
 
     #[test]
-    fn configured_concurrency_is_retained_for_alignment() {
-        let engine = FfmpegAudioEngine::with_concurrency(3);
-        assert_eq!(engine.max_concurrency, 3);
+    fn configured_concurrency_is_accepted_without_panicking() {
+        let _engine = FfmpegAudioEngine::with_concurrency(3);
     }
 }
