@@ -47,18 +47,15 @@ fn default_transcriber_model() -> String {
 }
 
 fn default_transcriber_fallbacks() -> Vec<String> {
-    vec!["gemini-3.5-flash".to_string()]
+    vec!["gemini-3.8-flash".to_string(), "gemini-3.5-flash".to_string()]
 }
 
 fn default_translator_model() -> String {
-    "gemini-3.1-flash-lite".to_string()
+    "gemini-3.5-flash-lite".to_string()
 }
 
 fn default_translator_fallbacks() -> Vec<String> {
-    vec![
-        "gemini-3.5-flash-lite".to_string(),
-        "gemini-3.5-flash".to_string(),
-    ]
+    vec!["gemini-3.8-flash".to_string(), "gemini-3.5-flash".to_string()]
 }
 
 fn default_tts_model() -> String {
@@ -66,7 +63,10 @@ fn default_tts_model() -> String {
 }
 
 fn default_tts_fallbacks() -> Vec<String> {
-    Vec::new()
+    vec![
+        "gemini-2.5-flash-preview-tts".to_string(),
+        "gemini-2.5-pro-preview-tts".to_string(),
+    ]
 }
 
 impl Default for ModelsConfig {
