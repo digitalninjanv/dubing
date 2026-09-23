@@ -217,6 +217,43 @@ impl Default for AppSettings {
 impl AppSettings {
     pub fn normalized(mut self) -> Self {
         self.runtime = self.runtime.normalized();
+
+        fn sync_models(provider: &str, models: &mut ModelsConfig) {
+            if provider.eq_ignore_ascii_case("openai") {
+                if models.transcriber.starts_with("gemini-") {
+                    models.transcriber = "gpt-4o-transcribe".to_string();
+                }
+                if models.translator.starts_with("gemini-") {
+                    models.translator = "gpt-5".to_string();
+                }
+                if models.tts.starts_with("gemini-") {
+                    models.tts = "gpt-4o-mini-tts".to_string();
+                }
+                if models.transcriber_fallbacks.iter().all(|m| m.starts_with("gemini-")) {
+                    models.transcriber_fallbacks = vec!["gpt-4o-mini-transcribe".to_string()];
+                }
+                if models.translator_fallbacks.iter().all(|m| m.starts_with("gemini-")) {
+                    models.translator_fallbacks = vec!["gpt-5".to_string()];
+                }
+                if models.tts_fallbacks.iter().all(|m| m.starts_with("gemini-")) {
+                    models.tts_fallbacks = vec!["gpt-4o-mini-tts".to_string()];
+                }
+            } else if provider.eq_ignore_ascii_case("gemini") {
+                if models.transcriber.starts_with("gpt-") {
+                    models.transcriber = default_transcriber_model();
+                }
+                if models.translator.starts_with("gpt-") {
+                    models.translator = default_translator_model();
+                }
+                if models.tts.starts_with("gpt-") {
+                    models.tts = default_tts_model();
+                }
+            }
+        }
+
+        sync_models(&self.providers.transcriber, &mut self.models);
+        sync_models(&self.providers.translator, &mut self.models);
+        sync_models(&self.providers.tts, &mut self.models);
         self
     }
 
