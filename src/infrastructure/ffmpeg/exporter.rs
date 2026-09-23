@@ -328,7 +328,7 @@ impl FfmpegExporter {
 mod tests {
     use super::FfmpegExporter;
     use crate::domain::AudioFormat;
-    use crate::infrastructure::ffmpeg::FfmpegAligner;
+    use std::process::Command;
 
     #[test]
     fn export_smoke_test_produces_valid_mastered_audio() {
@@ -337,8 +337,20 @@ mod tests {
         let second = dir.path().join("second.wav");
         let output = dir.path().join("mastered.mp3");
 
-        FfmpegAligner::generate_silence(&first, 600, 24_000).expect("first silence");
-        FfmpegAligner::generate_silence(&second, 600, 24_000).expect("second silence");
+        for path in [&first, &second] {
+            let status = Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=48000:duration=0.6",
+                ])
+                .arg(path)
+                .status()
+                .expect("ffmpeg sine");
+            assert!(status.success());
+        }
 
         let artifact = FfmpegExporter::export(
             &[first, second],
