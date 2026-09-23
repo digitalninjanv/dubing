@@ -57,7 +57,9 @@ impl FfmpegExporter {
             .prefix("audiodub_output_")
             .suffix(format!(".{}", format.extension()))
             .tempfile_in(parent_dir)
-            .map_err(|e| DomainError::ExportError(format!("Failed to create output temp file: {}", e)))?;
+            .map_err(|e| {
+                DomainError::ExportError(format!("Failed to create output temp file: {}", e))
+            })?;
         let output_tmp_path = output_tmp.path().to_path_buf();
 
         cmd.arg("-y")
