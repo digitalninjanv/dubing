@@ -1,6 +1,7 @@
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+/// Bump this whenever the provenance algorithm or semantics change.
 pub const PROVENANCE_SCHEMA_VERSION: u32 = 1;
 
 /// Computes a deterministic SHA-256 fingerprint for non-secret stage inputs.
