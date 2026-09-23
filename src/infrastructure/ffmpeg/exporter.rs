@@ -323,3 +323,37 @@ impl FfmpegExporter {
         Ok(output_audio.to_path_buf())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::FfmpegExporter;
+    use crate::domain::AudioFormat;
+    use crate::infrastructure::ffmpeg::FfmpegAligner;
+
+    #[test]
+    fn export_smoke_test_produces_valid_mastered_audio() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let first = dir.path().join("first.wav");
+        let second = dir.path().join("second.wav");
+        let output = dir.path().join("mastered.mp3");
+
+        FfmpegAligner::generate_silence(&first, 600, 24_000).expect("first silence");
+        FfmpegAligner::generate_silence(&second, 600, 24_000).expect("second silence");
+
+        let artifact = FfmpegExporter::export(
+            &[first, second],
+            &output,
+            AudioFormat::Mp3,
+            192,
+            Vec::new(),
+            Some(1_200),
+        )
+        .expect("export");
+
+        assert!(artifact.size_bytes > 0);
+        assert!(artifact.duration_ms >= 1_000);
+        assert!(artifact.duration_ms <= 1_500);
+        assert!(output.is_file());
+    }
+}
