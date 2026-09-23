@@ -343,7 +343,6 @@ mod tests {
         assert!(QualityGate::validate_translation(&transcript(), &value).is_err());
     }
 
-
     #[test]
     fn rejects_word_timestamp_outside_segment() {
         let mut value = transcript();
