@@ -281,7 +281,13 @@ mod runtime_tests {
         assert_eq!(settings.models.transcriber_fallbacks[0], "gemini-3.8-flash");
         assert_eq!(settings.models.translator, "gemini-3.5-flash-lite");
         assert_eq!(settings.models.translator_fallbacks[0], "gemini-3.8-flash");
-        assert_eq!(settings.models.tts_fallbacks[0], "gemini-2.5-flash-preview-tts");
-        assert_eq!(settings.models.tts_fallbacks[1], "gemini-2.5-pro-preview-tts");
+        assert_eq!(
+            settings.models.tts_fallbacks[0],
+            "gemini-2.5-flash-preview-tts"
+        );
+        assert_eq!(
+            settings.models.tts_fallbacks[1],
+            "gemini-2.5-pro-preview-tts"
+        );
     }
 }
