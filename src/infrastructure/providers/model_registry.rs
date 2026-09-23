@@ -110,7 +110,22 @@ impl ModelRegistry {
         });
         registry.register(ModelSpec {
             provider: "gemini".to_string(),
+            id: "gemini-3.8-flash".to_string(),
+            capabilities: ModelCapabilities::general_text_audio(),
+        });
+        registry.register(ModelSpec {
+            provider: "gemini".to_string(),
             id: "gemini-3.1-flash-tts-preview".to_string(),
+            capabilities: ModelCapabilities::tts(),
+        });
+        registry.register(ModelSpec {
+            provider: "gemini".to_string(),
+            id: "gemini-2.5-flash-preview-tts".to_string(),
+            capabilities: ModelCapabilities::tts(),
+        });
+        registry.register(ModelSpec {
+            provider: "gemini".to_string(),
+            id: "gemini-2.5-pro-preview-tts".to_string(),
             capabilities: ModelCapabilities::tts(),
         });
 
@@ -140,7 +155,8 @@ impl ModelRegistry {
             ));
         }
 
-        if let Some(spec) = self.get(provider, model) {
+        let normalized_provider = provider.to_ascii_lowercase();
+        if let Some(spec) = self.get(&normalized_provider, model) {
             if !spec.capabilities.supports(role) {
                 return Err(DomainError::UnsupportedModel {
                     role: role.as_str().to_string(),
@@ -174,6 +190,34 @@ mod tests {
         let registry = ModelRegistry::standard();
         assert!(registry
             .validate("gemini", "future-model-2027", ModelRole::Tts)
+            .is_ok());
+    }
+
+    #[test]
+    fn known_models_cover_current_fallback_chain() {
+        let registry = ModelRegistry::standard();
+        for model in [
+            "gemini-3.8-flash",
+            "gemini-2.5-flash-preview-tts",
+            "gemini-2.5-pro-preview-tts",
+        ] {
+            let role = if model.contains("tts") {
+                ModelRole::Tts
+            } else {
+                ModelRole::Translation
+            };
+            assert!(registry.validate("gemini", model, role).is_ok(), "{model}");
+        }
+    }
+
+    #[test]
+    fn provider_validation_is_case_insensitive_for_known_models() {
+        let registry = ModelRegistry::standard();
+        assert!(registry
+            .validate("GEMINI", "gemini-3.8-flash", ModelRole::Translation)
+            .is_ok());
+        assert!(registry
+            .validate("Gemini", "gemini-3.5-transcribe", ModelRole::Transcription)
             .is_ok());
     }
 }
