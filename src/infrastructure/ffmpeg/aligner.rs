@@ -249,11 +249,8 @@ impl FfmpegAligner {
                 None
             };
 
-            let dur_ms = Self::process_segment_single_pass(
-                &plan.synth_path,
-                &plan.target_path,
-                tempo,
-            )?;
+            let dur_ms =
+                Self::process_segment_single_pass(&plan.synth_path, &plan.target_path, tempo)?;
             processed.push(Ok(ProcessedSegment {
                 path: plan.target_path.clone(),
                 duration_ms: dur_ms,
