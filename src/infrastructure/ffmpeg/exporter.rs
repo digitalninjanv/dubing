@@ -228,6 +228,75 @@ impl FfmpegExporter {
     }
 
     /// Dynamically ducks background audio under a voiceover track using FFmpeg sidechaincompress
+    /// Use the optional local Demucs separator to remove vocals/speech from
+    /// the source. The ML model runs out-of-process so the Rust core stays
+    /// independent of Python/Torch installation details.
+    pub fn separate_background(
+        source_audio: &Path,
+        output_dir: &Path,
+    ) -> Result<PathBuf, DomainError> {
+        std::fs::create_dir_all(output_dir).map_err(|e| {
+            DomainError::ExportError(format!(
+                "Failed to create separation output directory: {}",
+                e
+            ))
+        })?;
+
+        let source_stem = source_audio
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("audio");
+        let expected = output_dir.join(format!("{}_no_vocals.wav", source_stem));
+
+        let status = std::process::Command::new("python3")
+            .args([
+                "-m",
+                "demucs",
+                "--two-stems",
+                "vocals",
+                "-n",
+                "mdx_q",
+                "-d",
+                "cpu",
+                "-o",
+            ])
+            .arg(output_dir)
+            .arg(source_audio)
+            .status()
+            .map_err(|e| {
+                DomainError::ExportError(format!(
+                    "Speech separation unavailable (install Demucs with Python): {}",
+                    e
+                ))
+            })?;
+
+        if !status.success() {
+            return Err(DomainError::ExportError(
+                "Demucs speech/background separation failed".to_string(),
+            ));
+        }
+
+        let model_dir = output_dir.join("mdx_q");
+        let separated_dir = model_dir.join(source_stem);
+        let no_vocals = separated_dir.join("no_vocals.wav");
+
+        if !no_vocals.is_file() {
+            return Err(DomainError::ExportError(format!(
+                "Demucs completed but background stem was not produced at {}",
+                no_vocals.display()
+            )));
+        }
+
+        std::fs::copy(&no_vocals, &expected).map_err(|e| {
+            DomainError::ExportError(format!(
+                "Failed to publish separated background stem: {}",
+                e
+            ))
+        })?;
+
+        Ok(expected)
+    }
+
     pub fn mix_with_ducking(
         background_audio: &Path,
         voiceover_audio: &Path,
