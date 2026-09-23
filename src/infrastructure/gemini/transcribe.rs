@@ -88,7 +88,14 @@ pub struct GeminiTranscriber {
 
 impl GeminiTranscriber {
     pub fn new(client: GeminiClient, model_name: impl Into<String>) -> Self {
-        Self::new_with_fallbacks(client, model_name, vec!["gemini-3.5-flash".to_string()])
+        Self::new_with_fallbacks(
+            client,
+            model_name,
+            vec![
+                "gemini-3.8-flash".to_string(),
+                "gemini-3.5-flash".to_string(),
+            ],
+        )
     }
 
     pub fn new_with_fallbacks(
