@@ -230,12 +230,17 @@ impl TextTranslator for OpenAiTranslator {
             })
             .collect();
 
-        let prompt = format!(
-            "Translate this dubbing transcript into {}. Tone: {}. Preserve segment_id,              speaker_id and timing fields exactly. Return ONLY JSON:              {{"translations":[{{"segment_id":"...","translated_text":"..."}}]}}              Keep translations concise enough to fit the original segment duration.\n{}",
+        let mut prompt = format!(
+            "Translate this dubbing transcript into {}. Tone: {}. Preserve segment_id, speaker_id and timing fields exactly. Return ONLY JSON. Keep translations concise enough to fit the original segment duration.\\n",
             target_lang.as_str(),
             tone.as_str(),
-            serde_json::to_string(&segments).unwrap_or_default()
         );
+        prompt.push_str(
+            r#"{"translations":[{"segment_id":"...","translated_text":"..."}]} 
+Input segments:
+"#,
+        );
+        prompt.push_str(&serde_json::to_string(&segments).unwrap_or_default());
 
         let response = self
             .client
