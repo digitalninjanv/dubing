@@ -884,7 +884,10 @@ impl PipelineOrchestrator {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to mix background with dubbed track, keeping dubbed track: {}", e);
+                    tracing::warn!(
+                        "Failed to mix background with dubbed track, keeping dubbed track: {}",
+                        e
+                    );
                     artifact
                         .quality_warnings
                         .push(format!("Background mix failed: {}", e));

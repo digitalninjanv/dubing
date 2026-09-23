@@ -229,13 +229,25 @@ impl AppSettings {
                 if models.tts.starts_with("gemini-") {
                     models.tts = "gpt-4o-mini-tts".to_string();
                 }
-                if models.transcriber_fallbacks.iter().all(|m| m.starts_with("gemini-")) {
+                if models
+                    .transcriber_fallbacks
+                    .iter()
+                    .all(|m| m.starts_with("gemini-"))
+                {
                     models.transcriber_fallbacks = vec!["gpt-4o-mini-transcribe".to_string()];
                 }
-                if models.translator_fallbacks.iter().all(|m| m.starts_with("gemini-")) {
+                if models
+                    .translator_fallbacks
+                    .iter()
+                    .all(|m| m.starts_with("gemini-"))
+                {
                     models.translator_fallbacks = vec!["gpt-5".to_string()];
                 }
-                if models.tts_fallbacks.iter().all(|m| m.starts_with("gemini-")) {
+                if models
+                    .tts_fallbacks
+                    .iter()
+                    .all(|m| m.starts_with("gemini-"))
+                {
                     models.tts_fallbacks = vec!["gpt-4o-mini-tts".to_string()];
                 }
             } else if provider.eq_ignore_ascii_case("gemini") {
@@ -248,10 +260,18 @@ impl AppSettings {
                 if models.tts.starts_with("gpt-") {
                     models.tts = default_tts_model();
                 }
-                if models.transcriber_fallbacks.iter().any(|m| m.starts_with("gpt-")) {
+                if models
+                    .transcriber_fallbacks
+                    .iter()
+                    .any(|m| m.starts_with("gpt-"))
+                {
                     models.transcriber_fallbacks = default_transcriber_fallbacks();
                 }
-                if models.translator_fallbacks.iter().any(|m| m.starts_with("gpt-")) {
+                if models
+                    .translator_fallbacks
+                    .iter()
+                    .any(|m| m.starts_with("gpt-"))
+                {
                     models.translator_fallbacks = default_translator_fallbacks();
                 }
                 if models.tts_fallbacks.iter().any(|m| m.starts_with("gpt-")) {

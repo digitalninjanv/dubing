@@ -79,9 +79,13 @@ impl ProviderRegistry {
                 .validate(&settings.providers.tts, fallback, ModelRole::Tts)?;
         }
 
-        let needs_gemini = [&settings.providers.transcriber, &settings.providers.translator, &settings.providers.tts]
-            .iter()
-            .any(|provider| provider.eq_ignore_ascii_case("gemini"));
+        let needs_gemini = [
+            &settings.providers.transcriber,
+            &settings.providers.translator,
+            &settings.providers.tts,
+        ]
+        .iter()
+        .any(|provider| provider.eq_ignore_ascii_case("gemini"));
         if needs_gemini && api_key.trim().is_empty() {
             return Err(DomainError::AuthenticationFailed);
         }
@@ -97,49 +101,58 @@ impl ProviderRegistry {
             client
         };
 
-        let openai_key = std::env::var("OPENAI_API_KEY").ok().filter(|k| !k.trim().is_empty());
+        let openai_key = std::env::var("OPENAI_API_KEY")
+            .ok()
+            .filter(|k| !k.trim().is_empty());
         let openai_client = openai_key.map(OpenAiClient::new);
 
-        let transcriber: Arc<dyn SpeechTranscriber> = match settings.providers.transcriber.to_ascii_lowercase().as_str() {
-            "gemini" => Arc::new(GeminiTranscriber::new_with_fallbacks(
-                gemini_client.clone(),
-                settings.models.transcriber.clone(),
-                settings.models.transcriber_fallbacks.clone(),
-            )),
-            "openai" => Arc::new(OpenAiTranscriber::new(
-                openai_client.clone().ok_or_else(|| DomainError::AuthenticationFailed)?,
-                settings.models.transcriber.clone(),
-            )),
-            provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
-        };
+        let transcriber: Arc<dyn SpeechTranscriber> =
+            match settings.providers.transcriber.to_ascii_lowercase().as_str() {
+                "gemini" => Arc::new(GeminiTranscriber::new_with_fallbacks(
+                    gemini_client.clone(),
+                    settings.models.transcriber.clone(),
+                    settings.models.transcriber_fallbacks.clone(),
+                )),
+                "openai" => Arc::new(OpenAiTranscriber::new(
+                    openai_client
+                        .clone()
+                        .ok_or_else(|| DomainError::AuthenticationFailed)?,
+                    settings.models.transcriber.clone(),
+                )),
+                provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
+            };
 
-        let translator: Arc<dyn TextTranslator> = match settings.providers.translator.to_ascii_lowercase().as_str() {
-            "gemini" => Arc::new(GeminiTranslator::new_with_fallbacks_and_limits(
-                gemini_client.clone(),
-                settings.models.translator.clone(),
-                settings.models.translator_fallbacks.clone(),
-                settings.runtime.translation_batch_size,
-                settings.runtime.translation_concurrency,
-            )),
-            "openai" => Arc::new(OpenAiTranslator::new(
-                openai_client.clone().ok_or_else(|| DomainError::AuthenticationFailed)?,
-                settings.models.translator.clone(),
-            )),
-            provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
-        };
+        let translator: Arc<dyn TextTranslator> =
+            match settings.providers.translator.to_ascii_lowercase().as_str() {
+                "gemini" => Arc::new(GeminiTranslator::new_with_fallbacks_and_limits(
+                    gemini_client.clone(),
+                    settings.models.translator.clone(),
+                    settings.models.translator_fallbacks.clone(),
+                    settings.runtime.translation_batch_size,
+                    settings.runtime.translation_concurrency,
+                )),
+                "openai" => Arc::new(OpenAiTranslator::new(
+                    openai_client
+                        .clone()
+                        .ok_or_else(|| DomainError::AuthenticationFailed)?,
+                    settings.models.translator.clone(),
+                )),
+                provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
+            };
 
-        let synthesizer: Arc<dyn SpeechSynthesizer> = match settings.providers.tts.to_ascii_lowercase().as_str() {
-            "gemini" => Arc::new(GeminiSynthesizer::new_with_fallbacks(
-                gemini_client,
-                settings.models.tts.clone(),
-                settings.models.tts_fallbacks.clone(),
-            )),
-            "openai" => Arc::new(OpenAiSynthesizer::new(
-                openai_client.ok_or_else(|| DomainError::AuthenticationFailed)?,
-                settings.models.tts.clone(),
-            )),
-            provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
-        };
+        let synthesizer: Arc<dyn SpeechSynthesizer> =
+            match settings.providers.tts.to_ascii_lowercase().as_str() {
+                "gemini" => Arc::new(GeminiSynthesizer::new_with_fallbacks(
+                    gemini_client,
+                    settings.models.tts.clone(),
+                    settings.models.tts_fallbacks.clone(),
+                )),
+                "openai" => Arc::new(OpenAiSynthesizer::new(
+                    openai_client.ok_or_else(|| DomainError::AuthenticationFailed)?,
+                    settings.models.tts.clone(),
+                )),
+                provider => return Err(DomainError::UnsupportedProvider(provider.to_string())),
+            };
 
         Ok(PipelineProviders {
             transcriber,

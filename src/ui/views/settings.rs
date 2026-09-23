@@ -33,17 +33,37 @@ impl SettingsDialog {
         let transcriber_provider = libadwaita::ComboRow::new();
         transcriber_provider.set_title("Transcription Provider");
         transcriber_provider.set_model(Some(&provider_values));
-        transcriber_provider.set_selected(if settings.providers.transcriber.eq_ignore_ascii_case("openai") { 1 } else { 0 });
+        transcriber_provider.set_selected(
+            if settings
+                .providers
+                .transcriber
+                .eq_ignore_ascii_case("openai")
+            {
+                1
+            } else {
+                0
+            },
+        );
 
         let translator_provider = libadwaita::ComboRow::new();
         translator_provider.set_title("Translation Provider");
         translator_provider.set_model(Some(&provider_values));
-        translator_provider.set_selected(if settings.providers.translator.eq_ignore_ascii_case("openai") { 1 } else { 0 });
+        translator_provider.set_selected(
+            if settings.providers.translator.eq_ignore_ascii_case("openai") {
+                1
+            } else {
+                0
+            },
+        );
 
         let tts_provider = libadwaita::ComboRow::new();
         tts_provider.set_title("TTS Provider");
         tts_provider.set_model(Some(&provider_values));
-        tts_provider.set_selected(if settings.providers.tts.eq_ignore_ascii_case("openai") { 1 } else { 0 });
+        tts_provider.set_selected(if settings.providers.tts.eq_ignore_ascii_case("openai") {
+            1
+        } else {
+            0
+        });
 
         provider_group.add(&transcriber_provider);
         provider_group.add(&translator_provider);
@@ -55,9 +75,24 @@ impl SettingsDialog {
             let tts_provider = tts_provider.clone();
             move || {
                 let mut s = AppSettings::load();
-                s.providers.transcriber = if transcriber_provider.selected() == 1 { "openai" } else { "gemini" }.to_string();
-                s.providers.translator = if translator_provider.selected() == 1 { "openai" } else { "gemini" }.to_string();
-                s.providers.tts = if tts_provider.selected() == 1 { "openai" } else { "gemini" }.to_string();
+                s.providers.transcriber = if transcriber_provider.selected() == 1 {
+                    "openai"
+                } else {
+                    "gemini"
+                }
+                .to_string();
+                s.providers.translator = if translator_provider.selected() == 1 {
+                    "openai"
+                } else {
+                    "gemini"
+                }
+                .to_string();
+                s.providers.tts = if tts_provider.selected() == 1 {
+                    "openai"
+                } else {
+                    "gemini"
+                }
+                .to_string();
                 if let Err(e) = s.save() {
                     tracing::warn!("Failed to persist provider settings: {}", e);
                 }

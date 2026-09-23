@@ -20,7 +20,11 @@ struct Fixture {
 }
 
 fn generate_fixture(path: &Path, fixture: &Fixture) {
-    let layout = if fixture.channels == 2 { "stereo" } else { "mono" };
+    let layout = if fixture.channels == 2 {
+        "stereo"
+    } else {
+        "mono"
+    };
     let duration = fixture.duration_ms as f64 / 1000.0;
     let status = Command::new("ffmpeg")
         .args(["-y", "-f", "lavfi"])
@@ -34,7 +38,11 @@ fn generate_fixture(path: &Path, fixture: &Fixture) {
         .arg(path)
         .status()
         .expect("ffmpeg must be installed for golden audio benchmark");
-    assert!(status.success(), "failed to create fixture {}", fixture.name);
+    assert!(
+        status.success(),
+        "failed to create fixture {}",
+        fixture.name
+    );
 }
 
 #[test]

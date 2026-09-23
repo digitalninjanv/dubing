@@ -1,7 +1,7 @@
 use crate::application::ports::{SpeechSynthesizer, SpeechTranscriber, TextTranslator};
 use crate::domain::{
-    DomainError, LanguageId, SynthesizedSegment, Transcript, TranscriptSegment, TranslationSegment,
-    TranslatedDocument, TranslationTone, VoiceProfile, WordTimestamp,
+    DomainError, LanguageId, SynthesizedSegment, Transcript, TranscriptSegment, TranslatedDocument,
+    TranslationSegment, TranslationTone, VoiceProfile, WordTimestamp,
 };
 use async_trait::async_trait;
 use reqwest::Client;
@@ -107,7 +107,9 @@ impl SpeechTranscriber for OpenAiTranscriber {
                             .to_string(),
                     )
                     .mime_str(&audio.mime_type)
-                    .map_err(|e| DomainError::Internal(format!("Invalid audio MIME type: {}", e)))?,
+                    .map_err(|e| {
+                        DomainError::Internal(format!("Invalid audio MIME type: {}", e))
+                    })?,
             )
             .text("model", self.model_name.clone())
             .text("response_format", "json".to_string());
@@ -126,7 +128,9 @@ impl SpeechTranscriber for OpenAiTranscriber {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| DomainError::TransientError(format!("OpenAI transcription network error: {}", e)))?;
+            .map_err(|e| {
+                DomainError::TransientError(format!("OpenAI transcription network error: {}", e))
+            })?;
 
         let response = OpenAiClient::ensure_success(response, "OpenAI transcription").await?;
         let parsed: TranscriptionResponse = response.json().await.map_err(|e| {
@@ -246,14 +250,18 @@ impl TextTranslator for OpenAiTranslator {
             }))
             .send()
             .await
-            .map_err(|e| DomainError::TransientError(format!("OpenAI translation network error: {}", e)))?;
+            .map_err(|e| {
+                DomainError::TransientError(format!("OpenAI translation network error: {}", e))
+            })?;
 
         let response = OpenAiClient::ensure_success(response, "OpenAI translation").await?;
         let value: serde_json::Value = response.json().await.map_err(|e| {
             DomainError::PermanentApiError(format!("Invalid OpenAI translation response: {}", e))
         })?;
         let raw = extract_response_text(&value).ok_or_else(|| {
-            DomainError::PermanentApiError("OpenAI translation response contained no text".to_string())
+            DomainError::PermanentApiError(
+                "OpenAI translation response contained no text".to_string(),
+            )
         })?;
 
         #[derive(Deserialize)]
@@ -284,9 +292,7 @@ impl TextTranslator for OpenAiTranslator {
                 source_start_ms: s.start_ms,
                 source_end_ms: s.end_ms,
                 source_text: s.text.clone(),
-                translated_text: by_id
-                    .remove(&s.id)
-                    .unwrap_or_else(|| s.text.clone()),
+                translated_text: by_id.remove(&s.id).unwrap_or_else(|| s.text.clone()),
             })
             .collect();
 
