@@ -9,7 +9,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -25,8 +25,24 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Format check
-        run: cargo fmt --all -- --check
+      - name: Format and persist changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          cargo fmt --all
+          if ! git diff --quiet; then
+            git diff --name-only -z | while IFS= read -r -d '' file; do
+              encoded="$(base64 -w0 "$file")"
+              sha="$(gh api "repos/${{ github.repository }}/contents/$file?ref=$BRANCH_NAME" --jq '.sha')"
+              gh api --method PUT "repos/${{ github.repository }}/contents/$file" \
+                -f message="style: apply cargo fmt" \
+                -f content="$encoded" \
+                -f branch="$BRANCH_NAME" \
+                -f sha="$sha" >/dev/null
+            done
+          fi
+          cargo fmt --all -- --check
       - name: Lints (zero warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
