@@ -9,7 +9,8 @@ use crate::domain::{
     TranslatedDocument, TranslationTone, VoiceProfile,
 };
 use crate::infrastructure::filesystem::{
-    AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
+    fingerprint, AppPaths, ArtifactManifest, ArtifactStore, CleanupManager,
+    PROVENANCE_SCHEMA_VERSION,
 };
 use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
@@ -340,24 +341,60 @@ impl PipelineOrchestrator {
                 .translate(&transcript, &job.target_language, options.tone)
                 .await?;
 
+            let translation_provenance = fingerprint(&serde_json::json!({
+                "schema": PROVENANCE_SCHEMA_VERSION,
+                "stage": "translation",
+                "transcript": &transcript,
+                "target_language": &job.target_language,
+                "tone": &options.tone,
+                "provider": self.translator.cache_identity(),
+            }))
+            .map_err(|e| {
+                DomainError::Internal(format!(
+                    "Failed to fingerprint translation provenance: {}",
+                    e
+                ))
+            })?;
+
             let translated_path = job_dir.join("translated.json");
             let data = serde_json::to_string_pretty(&tr)
                 .map_err(|e| DomainError::Internal(format!("Serialize error: {}", e)))?;
             write_manifest_atomic(&translated_path, &data)?;
-            artifact_store.register("translation", &translated_path, &mut artifact_manifest)?;
+            artifact_store.register_with_provenance(
+                "translation",
+                &translated_path,
+                &mut artifact_manifest,
+                Some(translation_provenance.clone()),
+            )?;
             artifact_store.save(&artifact_manifest)?;
 
             tr
         } else {
+            let translation_provenance = fingerprint(&serde_json::json!({
+                "schema": PROVENANCE_SCHEMA_VERSION,
+                "stage": "translation",
+                "transcript": &transcript,
+                "target_language": &job.target_language,
+                "tone": &options.tone,
+                "provider": self.translator.cache_identity(),
+            }))
+            .map_err(|e| {
+                DomainError::Internal(format!(
+                    "Failed to fingerprint translation provenance: {}",
+                    e
+                ))
+            })?;
+
             let translated_path = artifact_store
-                .verify("translation", &artifact_manifest)?
-                .or_else(|| {
-                    let legacy_path = job_dir.join("translated.json");
-                    legacy_path.is_file().then_some(legacy_path)
-                })
+                .verify_with_provenance(
+                    "translation",
+                    &artifact_manifest,
+                    Some(&translation_provenance),
+                )?
                 .ok_or_else(|| {
                     DomainError::Internal(
-                        "Translation artifact is missing or failed checksum validation".to_string(),
+                        "Translation artifact is missing, stale, or failed provenance/checksum validation"
+                            .to_string(),
                     )
                 })?;
             let content = std::fs::read_to_string(&translated_path).map_err(|e| {
@@ -368,7 +405,12 @@ impl PipelineOrchestrator {
             })?;
 
             if !artifact_manifest.artifacts.contains_key("translation") {
-                artifact_store.register("translation", &translated_path, &mut artifact_manifest)?;
+                artifact_store.register_with_provenance(
+                    "translation",
+                    &translated_path,
+                    &mut artifact_manifest,
+                    Some(translation_provenance),
+                )?;
                 artifact_store.save(&artifact_manifest)?;
             }
 
@@ -401,10 +443,25 @@ impl PipelineOrchestrator {
                                 ))
                             })?;
                             write_manifest_atomic(&translated_path, &data)?;
-                            artifact_store.register(
+                            let translation_provenance = fingerprint(&serde_json::json!({
+                                "schema": PROVENANCE_SCHEMA_VERSION,
+                                "stage": "translation",
+                                "transcript": &transcript,
+                                "target_language": &job.target_language,
+                                "tone": &options.tone,
+                                "provider": self.translator.cache_identity(),
+                            }))
+                            .map_err(|e| {
+                                DomainError::Internal(format!(
+                                    "Failed to fingerprint reviewed translation provenance: {}",
+                                    e
+                                ))
+                            })?;
+                            artifact_store.register_with_provenance(
                                 "translation",
                                 &translated_path,
                                 &mut artifact_manifest,
+                                Some(translation_provenance),
                             )?;
                             ArtifactStore::invalidate_prefix(&mut artifact_manifest, "synthesis/");
                             ArtifactStore::invalidate_prefix(&mut artifact_manifest, "alignment/");
@@ -438,6 +495,7 @@ impl PipelineOrchestrator {
         }
 
         // 4. Speech Synthesis Stage (Utterance Chunking with Speaker Awareness)
+        // Provenance is part of cache identity so configuration changes regenerate audio.
         update_stage(
             &mut job,
             PipelineStage::Synthesizing,
@@ -515,6 +573,7 @@ impl PipelineOrchestrator {
         let t_synthesis_start = Instant::now();
         let synthesis_manifest = artifact_manifest.clone();
         let artifact_store_for_tasks = artifact_store.clone();
+        let synthesizer_identity = self.synthesizer.cache_identity();
         let mut tasks = Vec::with_capacity(translated.segments.len());
 
         for (idx, segment) in translated.segments.iter().enumerate() {
@@ -531,26 +590,46 @@ impl PipelineOrchestrator {
             let cancel = cancel_token.clone();
             let synthesis_manifest_for_task = synthesis_manifest.clone();
             let artifact_store_for_task = artifact_store_for_tasks.clone();
+            let tts_provenance = fingerprint(&serde_json::json!({
+                "schema": PROVENANCE_SCHEMA_VERSION,
+                "stage": "synthesis",
+                "segment": &seg,
+                "voice": &voice,
+                "provider": &synthesizer_identity,
+            }))
+            .map_err(|e| {
+                DomainError::Internal(format!("Failed to fingerprint TTS provenance: {}", e))
+            })?;
 
             tasks.push(async move {
                 if cancel.is_cancelled() {
                     return Err(DomainError::Cancelled);
                 }
 
-                // Resume capability: reuse a checksum-verified artifact first.
-                // Legacy files are still accepted once and adopted into the manifest.
                 let tts_key = format!("synthesis/{idx:04}");
                 let has_manifest_record =
                     synthesis_manifest_for_task.artifacts.contains_key(&tts_key);
                 let cached_path = artifact_store_for_task
-                    .verify(&tts_key, &synthesis_manifest_for_task)
+                    .verify_with_provenance(
+                        &tts_key,
+                        &synthesis_manifest_for_task,
+                        Some(&tts_provenance),
+                    )
                     .ok()
-                    .flatten();
+                    .flatten()
+                    .or_else(|| {
+                        // One-time migration for pre-provenance jobs. A legacy
+                        // file is accepted only when no manifest record exists;
+                        // after validation it is registered with current
+                        // provenance so future config/model changes invalidate it.
+                        if !has_manifest_record && segment_output_file.is_file() {
+                            Some(segment_output_file.clone())
+                        } else {
+                            None
+                        }
+                    });
 
-                // A registered-but-invalid artifact must be regenerated. Only
-                // unregistered legacy files are eligible for one-time adoption.
-                if cached_path.is_some() || (!has_manifest_record && segment_output_file.exists()) {
-                    let candidate = cached_path.unwrap_or_else(|| segment_output_file.clone());
+                if let Some(candidate) = cached_path {
                     if let Ok(meta) = std::fs::metadata(&candidate) {
                         if meta.len() > 1024 {
                             if let Ok(probe_meta) = engine.probe(&candidate).await {
@@ -563,6 +642,7 @@ impl PipelineOrchestrator {
                                             path: candidate,
                                             duration_ms: probe_meta.duration_ms,
                                         },
+                                        tts_provenance,
                                     ));
                                 }
                             }
@@ -588,17 +668,17 @@ impl PipelineOrchestrator {
                     .synthesize_segment(&seg, &voice, &segment_output_file)
                     .await?;
 
-                Ok((idx, synth_result))
+                Ok((idx, synth_result, tts_provenance))
             });
         }
 
         // Controlled concurrency keeps API pressure and local memory usage bounded.
         let mut stream = stream::iter(tasks).buffer_unordered(self.tts_concurrency);
-        let mut collected: Vec<(usize, SynthesizedSegment)> =
+        let mut collected: Vec<(usize, SynthesizedSegment, String)> =
             Vec::with_capacity(translated.segments.len());
 
         while let Some(res) = stream.next().await {
-            let (idx, synth_result) = match res {
+            let (idx, synth_result, tts_provenance) = match res {
                 Ok(item) => item,
                 Err(e) => {
                     if cancel_token.is_cancelled() {
@@ -618,12 +698,13 @@ impl PipelineOrchestrator {
                 }
             };
 
-            artifact_store.register(
+            artifact_store.register_with_provenance(
                 format!("synthesis/{idx:04}"),
                 &synth_result.path,
                 &mut artifact_manifest,
+                Some(tts_provenance.clone()),
             )?;
-            collected.push((idx, synth_result));
+            collected.push((idx, synth_result, tts_provenance));
             job.progress.completed_segments += 1;
             job.progress.message = format!(
                 "Synthesized segment {} of {}",
@@ -641,9 +722,9 @@ impl PipelineOrchestrator {
             on_progress(&job);
         }
 
-        collected.sort_by_key(|(idx, _)| *idx);
+        collected.sort_by_key(|(idx, _, _)| *idx);
         let synthesized_segments: Vec<SynthesizedSegment> =
-            collected.into_iter().map(|(_, seg)| seg).collect();
+            collected.into_iter().map(|(_, seg, _)| seg).collect();
         QualityGate::validate_synthesis(&translated, &synthesized_segments)?;
         let t_synthesis = t_synthesis_start.elapsed();
 

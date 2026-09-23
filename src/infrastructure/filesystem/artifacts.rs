@@ -15,6 +15,8 @@ pub struct ArtifactRecord {
     pub relative_path: PathBuf,
     pub size_bytes: u64,
     pub sha256: String,
+    #[serde(default)]
+    pub provenance_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +80,16 @@ impl ArtifactStore {
         path: &Path,
         manifest: &mut ArtifactManifest,
     ) -> Result<ArtifactRecord, DomainError> {
+        self.register_with_provenance(key, path, manifest, None)
+    }
+
+    pub fn register_with_provenance(
+        &self,
+        key: impl Into<String>,
+        path: &Path,
+        manifest: &mut ArtifactManifest,
+        provenance_sha256: Option<String>,
+    ) -> Result<ArtifactRecord, DomainError> {
         let key = key.into();
         let relative_path = path.strip_prefix(&self.job_dir).map_err(|_| {
             DomainError::Internal(format!(
@@ -87,7 +99,12 @@ impl ArtifactStore {
             ))
         })?;
 
-        let record = Self::record_path(key.clone(), relative_path.to_path_buf(), path)?;
+        let record = Self::record_path(
+            key.clone(),
+            relative_path.to_path_buf(),
+            path,
+            provenance_sha256,
+        )?;
         manifest.artifacts.insert(key, record.clone());
         Ok(record)
     }
@@ -97,9 +114,28 @@ impl ArtifactStore {
         key: &str,
         manifest: &ArtifactManifest,
     ) -> Result<Option<PathBuf>, DomainError> {
+        self.verify_with_provenance(key, manifest, None)
+    }
+
+    pub fn verify_with_provenance(
+        &self,
+        key: &str,
+        manifest: &ArtifactManifest,
+        expected_provenance_sha256: Option<&str>,
+    ) -> Result<Option<PathBuf>, DomainError> {
         let Some(record) = manifest.artifacts.get(key) else {
             return Ok(None);
         };
+
+        if let Some(expected) = expected_provenance_sha256 {
+            if record.provenance_sha256.as_deref() != Some(expected) {
+                tracing::debug!(
+                    "Artifact '{}' provenance mismatch; regenerating dependent output",
+                    key
+                );
+                return Ok(None);
+            }
+        }
 
         let path = self.job_dir.join(&record.relative_path);
         if !path.is_file() {
@@ -151,6 +187,7 @@ impl ArtifactStore {
         key: String,
         relative_path: PathBuf,
         path: &Path,
+        provenance_sha256: Option<String>,
     ) -> Result<ArtifactRecord, DomainError> {
         let metadata = std::fs::metadata(path).map_err(|e| {
             DomainError::Internal(format!(
@@ -172,6 +209,7 @@ impl ArtifactStore {
             relative_path,
             size_bytes: metadata.len(),
             sha256: sha256_file(path)?,
+            provenance_sha256,
         })
     }
 
@@ -251,6 +289,55 @@ mod tests {
     }
 
     #[test]
+    fn provenance_mismatch_invalidates_artifact() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("artifact.bin");
+        std::fs::write(&path, b"cached").unwrap();
+
+        let store = ArtifactStore::new(dir.path());
+        let mut manifest = ArtifactManifest::default();
+        store
+            .register_with_provenance(
+                "tts",
+                &path,
+                &mut manifest,
+                Some("provenance-a".to_string()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            store
+                .verify_with_provenance("tts", &manifest, Some("provenance-b"))
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            store
+                .verify_with_provenance("tts", &manifest, Some("provenance-a"))
+                .unwrap(),
+            Some(path)
+        );
+    }
+
+    #[test]
+    fn legacy_artifact_without_provenance_is_not_reused_when_expected() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("artifact.bin");
+        std::fs::write(&path, b"legacy").unwrap();
+
+        let store = ArtifactStore::new(dir.path());
+        let mut manifest = ArtifactManifest::default();
+        store.register("tts", &path, &mut manifest).unwrap();
+
+        assert_eq!(
+            store
+                .verify_with_provenance("tts", &manifest, Some("new"))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn invalidate_prefix_removes_dependent_artifacts_only() {
         let mut manifest = ArtifactManifest::default();
         manifest.artifacts.insert(
@@ -260,6 +347,7 @@ mod tests {
                 relative_path: "a.wav".into(),
                 size_bytes: 1,
                 sha256: "a".to_string(),
+                provenance_sha256: Some("p".to_string()),
             },
         );
         manifest.artifacts.insert(
@@ -269,6 +357,7 @@ mod tests {
                 relative_path: "translation.json".into(),
                 size_bytes: 1,
                 sha256: "b".to_string(),
+                provenance_sha256: None,
             },
         );
 

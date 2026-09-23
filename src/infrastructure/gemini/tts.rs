@@ -454,6 +454,14 @@ impl GeminiSynthesizer {
 
 #[async_trait]
 impl SpeechSynthesizer for GeminiSynthesizer {
+    fn cache_identity(&self) -> String {
+        format!(
+            "gemini-tts:{}|fallbacks:{}",
+            self.model_name,
+            self.fallback_models.join(",")
+        )
+    }
+
     async fn synthesize_segment(
         &self,
         segment: &TranslationSegment,
