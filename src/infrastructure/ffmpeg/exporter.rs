@@ -324,7 +324,6 @@ impl FfmpegExporter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::FfmpegExporter;
